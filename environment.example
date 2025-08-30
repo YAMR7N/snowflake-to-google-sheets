@@ -1,0 +1,24 @@
+# Environment Variables Template
+# Copy this to .env for local development
+
+# Snowflake Connection (Required)
+SNOWFLAKE_USER=your_username
+SNOWFLAKE_PASSWORD=your_password
+SNOWFLAKE_ACCOUNT=your_account.region
+SNOWFLAKE_WAREHOUSE=your_warehouse
+SNOWFLAKE_ROLE=your_role
+SNOWFLAKE_DATABASE=your_database
+SNOWFLAKE_SCHEMA=your_schema
+
+# Pipeline Control (Optional)
+DATE_STR=                    # Leave empty for yesterday's date, or use YYYY-MM-DD
+ONLY_METRIC=                 # Run specific metric only (sa, tools, categorizing, etc.)
+ONLY_DEPARTMENTS=            # Run specific departments only ("CC Sales,Doctors")
+SKIP_SNAPSHOTS=false         # Set to true to skip snapshot sheet updates
+
+# Google Credentials (Local Development Only)
+# For GitHub Actions, use GOOGLE_CREDENTIALS_JSON secret instead
+GOOGLE_APPLICATION_CREDENTIALS=credentials.json
+
+# Example Usage:
+# ONLY_METRIC=tools ONLY_DEPARTMENTS="CC Sales" python snowflake_to_sheets.py
