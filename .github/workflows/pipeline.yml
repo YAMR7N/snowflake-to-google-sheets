@@ -70,7 +70,6 @@ jobs:
         ONLY_METRIC: ${{ github.event.inputs.only_metric || '' }}
         ONLY_DEPARTMENTS: ${{ github.event.inputs.only_departments || '' }}
       run: |
-        cd "Snowflake Direct to Sheets"
         python snowflake_to_sheets.py
         
     - name: 🧹 Cleanup credentials
