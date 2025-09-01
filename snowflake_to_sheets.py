@@ -1345,7 +1345,7 @@ SUMMARY_COLUMN_TARGETS = {
         'CLINIC_RECOMMENDATION_COUNT', 'CLINIC_RECOMMENDATION_PCT',
         'OTC_MEDICATION_COUNT', 'OTC_MEDICATION_PCT'
     ],
-    'loss_of_interest': ['RECRUITMENT_STAGE', 'MAIN_REASON', 'SUB_REASON', 'MAIN_REASON_COUNT', 'SUB_REASON_COUNT', 'SUB_REASON_PCT'],
+    'loss_of_interest': ['RECRUITMENT_STAGE', 'MAIN_REASON', 'SUB_REASON', 'MAIN_REASON_COUNT', 'MAIN_REASON_PCT', 'SUB_REASON_COUNT', 'SUB_REASON_PCT'],
     'clinic_recommendation_reason': ['CATEGORY_NAME', 'NUMBER_OF_CHATS'],
 }
 
@@ -1371,6 +1371,7 @@ SUMMARY_COLUMN_CANDIDATES = {
     'MAIN_REASON': ['MAIN_REASON', 'Main_Reason', 'main_reason'],
     'SUB_REASON': ['SUB_REASON', 'Sub_Reason', 'sub_reason'],
     'MAIN_REASON_COUNT': ['MAIN_REASON_COUNT', 'Main_Reason_Count', 'main_reason_count'],
+    'MAIN_REASON_PCT': ['MAIN_REASON_PCT', 'Main_Reason_Pct', 'Main Reason %', 'main_reason_pct'],
     'SUB_REASON_COUNT': ['SUB_REASON_COUNT', 'Sub_Reason_Count', 'sub_reason_count'],
     'SUB_REASON_PCT': ['SUB_REASON_PCT', 'Sub_Reason_Pct', 'Sub Reason %', 'sub_reason_pct'],
 
