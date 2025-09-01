@@ -1187,6 +1187,36 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
                 percent_str = str(percent)
             count_str = str(count) if count is not None else ''
             display_value = f"{count_str} ({percent_str} of clinics recommended)".strip()
+        elif field == 'CALL_REQUEST_RATE':
+            # Call Request: CALL_REQUEST_COUNT (CALL_REQUEST_RATE)
+            percent = value
+            count = summary_row.get('CALL_REQUEST_COUNT')
+            try:
+                if isinstance(percent, str) and '%' in percent:
+                    percent_str = percent
+                else:
+                    pnum = float(percent)
+                    pstr_raw = ("%f" % pnum).rstrip('0').rstrip('.')
+                    percent_str = f"{pstr_raw}%"
+            except Exception:
+                percent_str = str(percent)
+            count_str = str(count) if count is not None else ''
+            display_value = f"{count_str} ({percent_str})".strip()
+        elif field == 'REBUTTAL_RESULT_RATE':
+            # Rebuttal Result: NO_RETENTION_COUNT (REBUTTAL_RESULT_RATE)
+            percent = value
+            count = summary_row.get('NO_RETENTION_COUNT')
+            try:
+                if isinstance(percent, str) and '%' in percent:
+                    percent_str = percent
+                else:
+                    pnum = float(percent)
+                    pstr_raw = ("%f" % pnum).rstrip('0').rstrip('.')
+                    percent_str = f"{pstr_raw}%"
+            except Exception:
+                percent_str = str(percent)
+            count_str = str(count) if count is not None else ''
+            display_value = f"{count_str} ({percent_str})".strip()
         elif dept_name == 'Doctors' and field in {'CLIENT_SUSPECTING_AI_PERCENTAGE', 'CLARITY_SCORE_PERCENTAGE'} and conn is not None:
             # Doctors-specific format: count (percentage%) where count is out of total chats from sa_raw_data
             # Derive fraction from percentage value (supports either fraction or percent number)
