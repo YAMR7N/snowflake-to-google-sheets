@@ -4,10 +4,6 @@ on:
   schedule:
     # 11:00 AM Lebanon time = 8:00 AM UTC (Lebanon UTC+3 summer / UTC+2 winter)
     - cron: '0 8 * * *'
-    # 2:00 PM Lebanon time = 11:00 AM UTC  
-    - cron: '0 11 * * *'
-    # 6:00 PM Lebanon time = 3:00 PM UTC
-    - cron: '0 15 * * *'
   
   # Allow manual trigger for testing
   workflow_dispatch:
