@@ -779,6 +779,7 @@ class SheetsClient:
             # Create merge requests for count columns to follow their reason columns
             count_mappings = {
                 'MAIN_REASON_COUNT': 'MAIN_REASON',
+                'MAIN_REASON_PCT': 'MAIN_REASON',
                 'SUB_REASON_COUNT': 'SUB_REASON'
             }
             
