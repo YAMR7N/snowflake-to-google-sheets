@@ -666,7 +666,11 @@ class SheetsClient:
             return False
 
     def merge_consecutive_cells(self, spreadsheet_id: str, sheet_name: str) -> bool:
-        """Merge consecutive cells for loss of interest summary with smart column targeting."""
+        """Merge consecutive cells for loss of interest summary following the exact flow:
+        1. Combine numbers and percentage into same column (already done in formatting)
+        2. Merge identical cells in MAIN_REASON, then merge corresponding MAIN_REASON_COUNT cells
+        3. Merge identical cells in SUB_REASON, then merge corresponding SUB_REASON_COUNT cells
+        """
         try:
             print(f"   🔀 Merging consecutive cells in {sheet_name}")
             
@@ -721,125 +725,112 @@ class SheetsClient:
             merge_requests = []
             num_rows = len(values)
             
-            # Process each reason column independently with its count column
-            def find_and_apply_merges(reason_col_name: str, count_col_name: str):
-                reason_idx = target_columns.get(reason_col_name)
-                count_idx = target_columns.get(count_col_name)
+            def find_consecutive_ranges(column_idx: int, column_name: str):
+                """Find ranges of consecutive identical non-empty values in a column."""
+                if column_idx is None:
+                    return []
                 
-                if reason_idx is None:
-                    print(f"   ⚠️ {reason_col_name} column not found, skipping merge")
-                    return
-                    
-                # Find consecutive identical values in reason column
                 merge_ranges = []
-                consecutive_start = None
-                consecutive_value = None
+                current_start = None
+                current_value = None
                 
-                for row_idx in range(1, num_rows):
-                    current_value = values[row_idx][reason_idx] if reason_idx < len(values[row_idx]) else ""
+                for row_idx in range(1, num_rows):  # Skip header row
+                    # Get current cell value, handling short rows
+                    if row_idx < len(values) and column_idx < len(values[row_idx]):
+                        cell_value = str(values[row_idx][column_idx]).strip()
+                    else:
+                        cell_value = ""
                     
-                    if consecutive_start is None:
-                        consecutive_start = row_idx
-                        consecutive_value = current_value
-                    elif current_value == consecutive_value and current_value != "":
+                    if current_start is None:
+                        # Start tracking a new sequence
+                        current_start = row_idx
+                        current_value = cell_value
+                    elif cell_value == current_value and cell_value != "":
+                        # Continue the current sequence (only merge non-empty values)
                         continue
                     else:
-                        # End of sequence - create merge if more than 1 row
-                        if row_idx - consecutive_start > 1 and consecutive_value != "":
-                            merge_ranges.append((consecutive_start, row_idx))
-                        consecutive_start = row_idx
-                        consecutive_value = current_value
+                        # End of current sequence, check if we should create a merge
+                        if (current_start is not None and 
+                            row_idx - current_start > 1 and 
+                            current_value != ""):
+                            merge_ranges.append((current_start, row_idx))
+                            print(f"   📋 {column_name} merge range: rows {current_start+1}-{row_idx} (value: '{current_value}')")
+                        
+                        # Start new sequence
+                        current_start = row_idx
+                        current_value = cell_value
                 
-                # Handle final sequence
-                if consecutive_start is not None and num_rows - consecutive_start > 1 and consecutive_value != "":
-                    merge_ranges.append((consecutive_start, num_rows))
+                # Handle the final sequence
+                if (current_start is not None and 
+                    num_rows - current_start > 1 and 
+                    current_value != ""):
+                    merge_ranges.append((current_start, num_rows))
+                    print(f"   📋 {column_name} merge range: rows {current_start+1}-{num_rows} (value: '{current_value}')")
                 
-                print(f"   🎯 {reason_col_name}: {len(merge_ranges)} merge ranges found")
-                
-                # Apply merges to reason column
-                for start_row, end_row in merge_ranges:
-                    merge_requests.append({
-                        'mergeCells': {
-                            'range': {
-                                'sheetId': sheet_id,
-                                'startRowIndex': start_row,
-                                'endRowIndex': end_row,
-                                'startColumnIndex': reason_idx,
-                                'endColumnIndex': reason_idx + 1
-                            },
-                            'mergeType': 'MERGE_ALL'
-                        }
-                    })
-                
-                # Apply same merges to count column if it exists
-                if count_idx is not None:
-                    for start_row, end_row in merge_ranges:
-                        merge_requests.append({
-                            'mergeCells': {
-                                'range': {
-                                    'sheetId': sheet_id,
-                                    'startRowIndex': start_row,
-                                    'endRowIndex': end_row,
-                                    'startColumnIndex': count_idx,
-                                    'endColumnIndex': count_idx + 1
-                                },
-                                'mergeType': 'MERGE_ALL'
-                            }
-                        })
-                    print(f"   🔗 {count_col_name} follows {reason_col_name} merge pattern")
-                else:
-                    print(f"   ⚠️ {count_col_name} column not found, skipping count merge")
+                return merge_ranges
             
-            # Process RECRUITMENT_STAGE independently (no count column)
+            def create_merge_request(start_row: int, end_row: int, column_idx: int):
+                """Create a merge request for the specified range."""
+                return {
+                    'mergeCells': {
+                        'range': {
+                            'sheetId': sheet_id,
+                            'startRowIndex': start_row,
+                            'endRowIndex': end_row,
+                            'startColumnIndex': column_idx,
+                            'endColumnIndex': column_idx + 1
+                        },
+                        'mergeType': 'MERGE_ALL'
+                    }
+                }
+            
+            # Step 1: Process RECRUITMENT_STAGE (independent column)
             recruitment_idx = target_columns.get('RECRUITMENT_STAGE')
             if recruitment_idx is not None:
-                merge_ranges = []
-                consecutive_start = None
-                consecutive_value = None
-                
-                for row_idx in range(1, num_rows):
-                    current_value = values[row_idx][recruitment_idx] if recruitment_idx < len(values[row_idx]) else ""
-                    
-                    if consecutive_start is None:
-                        consecutive_start = row_idx
-                        consecutive_value = current_value
-                    elif current_value == consecutive_value and current_value != "":
-                        continue
-                    else:
-                        # End of sequence
-                        if row_idx - consecutive_start > 1 and consecutive_value != "":
-                            merge_ranges.append((consecutive_start, row_idx))
-                        consecutive_start = row_idx
-                        consecutive_value = current_value
-                
-                # Handle final sequence
-                if consecutive_start is not None and num_rows - consecutive_start > 1 and consecutive_value != "":
-                    merge_ranges.append((consecutive_start, num_rows))
-                
-                print(f"   🎯 RECRUITMENT_STAGE: {len(merge_ranges)} merge ranges found")
-                
-                # Apply merges to recruitment stage
-                for start_row, end_row in merge_ranges:
-                    merge_requests.append({
-                        'mergeCells': {
-                            'range': {
-                                'sheetId': sheet_id,
-                                'startRowIndex': start_row,
-                                'endRowIndex': end_row,
-                                'startColumnIndex': recruitment_idx,
-                                'endColumnIndex': recruitment_idx + 1
-                            },
-                            'mergeType': 'MERGE_ALL'
-                        }
-                    })
+                recruitment_ranges = find_consecutive_ranges(recruitment_idx, 'RECRUITMENT_STAGE')
+                for start_row, end_row in recruitment_ranges:
+                    merge_requests.append(create_merge_request(start_row, end_row, recruitment_idx))
+                print(f"   🎯 RECRUITMENT_STAGE: {len(recruitment_ranges)} merge ranges found")
             
-            # Process MAIN_REASON + MAIN_REASON_COUNT pair independently  
-            find_and_apply_merges('MAIN_REASON', 'MAIN_REASON_COUNT')
+            # Step 2: Process MAIN_REASON and apply same merges to MAIN_REASON_COUNT
+            main_reason_idx = target_columns.get('MAIN_REASON')
+            main_count_idx = target_columns.get('MAIN_REASON_COUNT')
             
-            # Process SUB_REASON + SUB_REASON_COUNT pair independently
-            find_and_apply_merges('SUB_REASON', 'SUB_REASON_COUNT')
+            if main_reason_idx is not None:
+                main_ranges = find_consecutive_ranges(main_reason_idx, 'MAIN_REASON')
+                
+                # Apply merges to MAIN_REASON column
+                for start_row, end_row in main_ranges:
+                    merge_requests.append(create_merge_request(start_row, end_row, main_reason_idx))
+                
+                # Apply same merges to MAIN_REASON_COUNT column if it exists
+                if main_count_idx is not None:
+                    for start_row, end_row in main_ranges:
+                        merge_requests.append(create_merge_request(start_row, end_row, main_count_idx))
+                    print(f"   🔗 MAIN_REASON_COUNT follows MAIN_REASON merge pattern")
+                
+                print(f"   🎯 MAIN_REASON: {len(main_ranges)} merge ranges found and applied to both columns")
             
-            # Execute merge requests if any
+            # Step 3: Process SUB_REASON and apply same merges to SUB_REASON_COUNT
+            sub_reason_idx = target_columns.get('SUB_REASON')
+            sub_count_idx = target_columns.get('SUB_REASON_COUNT')
+            
+            if sub_reason_idx is not None:
+                sub_ranges = find_consecutive_ranges(sub_reason_idx, 'SUB_REASON')
+                
+                # Apply merges to SUB_REASON column
+                for start_row, end_row in sub_ranges:
+                    merge_requests.append(create_merge_request(start_row, end_row, sub_reason_idx))
+                
+                # Apply same merges to SUB_REASON_COUNT column if it exists
+                if sub_count_idx is not None:
+                    for start_row, end_row in sub_ranges:
+                        merge_requests.append(create_merge_request(start_row, end_row, sub_count_idx))
+                    print(f"   🔗 SUB_REASON_COUNT follows SUB_REASON merge pattern")
+                
+                print(f"   🎯 SUB_REASON: {len(sub_ranges)} merge ranges found and applied to both columns")
+            
+            # Execute all merge requests
             if merge_requests:
                 print(f"   🔀 Executing {len(merge_requests)} merge operations")
                 self._execute_with_retry(
