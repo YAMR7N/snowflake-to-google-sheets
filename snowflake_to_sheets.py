@@ -691,6 +691,7 @@ class SheetsClient:
                 'MAIN_REASON': None, 
                 'SUB_REASON': None,
                 'MAIN_REASON_COUNT': None,
+                'MAIN_REASON_PCT': None,
                 'SUB_REASON_COUNT': None
             }
             
