@@ -691,7 +691,6 @@ class SheetsClient:
                 'MAIN_REASON': None, 
                 'SUB_REASON': None,
                 'MAIN_REASON_COUNT': None,
-                'MAIN_REASON_PCT': None,
                 'SUB_REASON_COUNT': None
             }
             
@@ -780,7 +779,6 @@ class SheetsClient:
             # Create merge requests for count columns to follow their reason columns
             count_mappings = {
                 'MAIN_REASON_COUNT': 'MAIN_REASON',
-                'MAIN_REASON_PCT': 'MAIN_REASON',
                 'SUB_REASON_COUNT': 'SUB_REASON'
             }
             
@@ -1347,7 +1345,7 @@ SUMMARY_COLUMN_TARGETS = {
         'CLINIC_RECOMMENDATION_COUNT', 'CLINIC_RECOMMENDATION_PCT',
         'OTC_MEDICATION_COUNT', 'OTC_MEDICATION_PCT'
     ],
-    'loss_of_interest': ['RECRUITMENT_STAGE', 'MAIN_REASON', 'SUB_REASON', 'MAIN_REASON_COUNT', 'MAIN_REASON_PCT', 'SUB_REASON_COUNT', 'SUB_REASON_PCT'],
+    'loss_of_interest': ['RECRUITMENT_STAGE', 'MAIN_REASON', 'MAIN_REASON_COUNT', 'SUB_REASON', 'SUB_REASON_COUNT'],
     'clinic_recommendation_reason': ['CATEGORY_NAME', 'NUMBER_OF_CHATS'],
 }
 
@@ -1434,6 +1432,54 @@ def prettify_summary_headers(metric_key: str, dept: str, df: pd.DataFrame) -> pd
             pretty = pretty.rename(columns=existing)
         return pretty
     return df
+
+
+def format_loss_of_interest_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Format loss of interest summary data with count(percentage%) format."""
+    if df.empty:
+        return df
+    
+    formatted_df = df.copy()
+    
+    # Format MAIN_REASON_COUNT to show count(percentage%)
+    if 'MAIN_REASON_COUNT' in formatted_df.columns and 'MAIN_REASON_PCT' in formatted_df.columns:
+        for idx, row in formatted_df.iterrows():
+            count = row.get('MAIN_REASON_COUNT')
+            pct = row.get('MAIN_REASON_PCT')
+            
+            if pd.notna(count) and pd.notna(pct):
+                # Format percentage
+                try:
+                    if isinstance(pct, str) and '%' in pct:
+                        pct_str = pct
+                    else:
+                        pct_num = float(pct)
+                        pct_str = f"{pct_num:.1f}%".rstrip('0').rstrip('.') + '%'
+                except Exception:
+                    pct_str = str(pct)
+                
+                formatted_df.at[idx, 'MAIN_REASON_COUNT'] = f"{count} ({pct_str})"
+    
+    # Format SUB_REASON_COUNT to show count(percentage%)
+    if 'SUB_REASON_COUNT' in formatted_df.columns and 'SUB_REASON_PCT' in formatted_df.columns:
+        for idx, row in formatted_df.iterrows():
+            count = row.get('SUB_REASON_COUNT')
+            pct = row.get('SUB_REASON_PCT')
+            
+            if pd.notna(count) and pd.notna(pct):
+                # Format percentage
+                try:
+                    if isinstance(pct, str) and '%' in pct:
+                        pct_str = pct
+                    else:
+                        pct_num = float(pct)
+                        pct_str = f"{pct_num:.1f}%".rstrip('0').rstrip('.') + '%'
+                except Exception:
+                    pct_str = str(pct)
+                
+                formatted_df.at[idx, 'SUB_REASON_COUNT'] = f"{count} ({pct_str})"
+    
+    return formatted_df
 def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[str, str], date_str: str, conn) -> None:
     if not metric.raw_table and metric.extra_behavior not in ['policy_violation_combined', 'intervention_categorizing_filter', 'tools_quad_tabs', 'merge_consecutive_cells']:
         print(f"➡️  {metric.name}: Placeholder only. Skipping upload.")
@@ -1562,7 +1608,11 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
             if not loi_summary.empty:
                 summary_tab = f"{sheet_name}-summary"
                 if gc.create_sheet_if_missing(spreadsheet_id, summary_tab):
-                    gc.upload_dataframe(spreadsheet_id, summary_tab, filter_summary_columns('loss_of_interest', loi_summary))
+                    # Format count columns to show count(percentage%) before filtering
+                    formatted_loi = format_loss_of_interest_summary(loi_summary)
+                    # Filter to get only the target columns (now with formatted count columns)
+                    filtered_loi = filter_summary_columns('loss_of_interest', formatted_loi)
+                    gc.upload_dataframe(spreadsheet_id, summary_tab, filtered_loi)
                     
                     # Special behavior: merge consecutive cells for Filipina
                     if dept == 'Filipina':
