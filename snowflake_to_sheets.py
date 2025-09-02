@@ -772,16 +772,16 @@ class SheetsClient:
             def create_merge_request(start_row: int, end_row: int, column_idx: int):
                 """Create a merge request for the specified range."""
                 return {
-                    'mergeCells': {
-                        'range': {
-                            'sheetId': sheet_id,
-                            'startRowIndex': start_row,
-                            'endRowIndex': end_row,
+                            'mergeCells': {
+                                'range': {
+                                    'sheetId': sheet_id,
+                                    'startRowIndex': start_row,
+                                    'endRowIndex': end_row,
                             'startColumnIndex': column_idx,
                             'endColumnIndex': column_idx + 1
-                        },
-                        'mergeType': 'MERGE_ALL'
-                    }
+                                },
+                                'mergeType': 'MERGE_ALL'
+                            }
                 }
             
             # Step 1: Process RECRUITMENT_STAGE (independent column)
@@ -1323,16 +1323,24 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
 
 TARGET_LLM_COLUMNS = ['CONVERSATION_ID', 'MODEL_NAME', 'CONVERSATION_CONTENT', 'LLM_RESPONSE']
 
+# Additional columns for specific departments
+DEPT_SPECIFIC_COLUMNS = {
+    'Filipina': ['SYSTEM_PROMPT_SNAPSHOT'],
+    'African': ['SYSTEM_PROMPT_SNAPSHOT'], 
+    'Ethiopian': ['SYSTEM_PROMPT_SNAPSHOT'],
+}
+
 COLUMN_CANDIDATES = {
     'CONVERSATION_ID': ['CONVERSATION_ID', 'conversation_id', 'Conversation_ID', 'conversationId', 'CONV_ID', 'conv_id'],
     'MODEL_NAME': ['MODEL_NAME', 'model_name', 'MODEL', 'model', 'MODEL_USED'],
     'CONVERSATION_CONTENT': ['CONVERSATION_CONTENT', 'conversation_content', 'CONVERSATION', 'conversation', 'CONTENT', 'content'],
     'LLM_RESPONSE': ['LLM_RESPONSE', 'llm_response', 'LLM_OUTPUT', 'llm_output', 'RESPONSE', 'response'],
+    'SYSTEM_PROMPT_SNAPSHOT': ['SYSTEM_PROMPT_SNAPSHOT', 'system_prompt_snapshot', 'SYSTEM_PROMPT', 'system_prompt', 'PROMPT_SNAPSHOT', 'prompt_snapshot'],
 }
 
 
-def filter_llm_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Return DataFrame with only TARGET_LLM_COLUMNS, mapping common aliases.
+def filter_llm_columns(df: pd.DataFrame, department: str = None) -> pd.DataFrame:
+    """Return DataFrame with only TARGET_LLM_COLUMNS plus department-specific columns, mapping common aliases.
     Adds empty columns if not found; logs mapping results.
     """
     result = pd.DataFrame()
@@ -1347,8 +1355,17 @@ def filter_llm_columns(df: pd.DataFrame) -> pd.DataFrame:
                 return src_cols_lower[low]
         return None
 
-    for target in TARGET_LLM_COLUMNS:
-        cand_list = COLUMN_CANDIDATES.get(target, [])
+    # Start with base columns
+    target_columns = TARGET_LLM_COLUMNS.copy()
+    
+    # Add department-specific columns if department is specified
+    if department and department in DEPT_SPECIFIC_COLUMNS:
+        dept_columns = DEPT_SPECIFIC_COLUMNS[department]
+        target_columns.extend(dept_columns)
+        print(f"   📋 Including department-specific columns for {department}: {dept_columns}")
+
+    for target in target_columns:
+        cand_list = COLUMN_CANDIDATES.get(target, [target])
         src = pick_column(cand_list)
         if src is not None:
             result[target] = df[src]
@@ -1605,14 +1622,14 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 gc.upload_dataframe(spreadsheet_id, report_tab, filtered)
             else:
                 if gc.create_sheet_if_missing(spreadsheet_id, report_tab):
-                    gc.upload_dataframe(spreadsheet_id, report_tab, filter_llm_columns(df))
+                    gc.upload_dataframe(spreadsheet_id, report_tab, filter_llm_columns(df, dept))
 
             # Always upload filtered raw to -RAW tab for traceability
             if gc.create_sheet_if_missing(spreadsheet_id, raw_tab):
-                gc.upload_dataframe(spreadsheet_id, raw_tab, filter_llm_columns(df))
+                gc.upload_dataframe(spreadsheet_id, raw_tab, filter_llm_columns(df, dept))
         elif metric.name == 'policy_escalation':
             # Upload raw to date tab
-            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df))
+            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df, dept))
             # Also upload summary to date-summary tab if available
             try:
                 pe_summary = fetch_table_df(conn, 'policy_escalation_summary', date_str, dept)
@@ -1625,7 +1642,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                     gc.upload_dataframe(spreadsheet_id, summary_tab, filter_summary_columns('policy_escalation', pe_summary))
         elif metric.name == 'loss_of_interest':
             # Upload raw first
-            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df))
+            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df, dept))
             # Then upload summary tab if available
             try:
                 loi_summary = fetch_table_df(conn, 'LOSS_INTEREST_SUMMARY', date_str, dept)
@@ -1646,7 +1663,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                         gc.merge_consecutive_cells(spreadsheet_id, summary_tab)
         elif metric.name == 'clinic_recommendation_reason':
             # Upload raw first
-            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df))
+            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df, dept))
             # Then upload summary tab if available
             try:
                 crr_summary = fetch_table_df(conn, 'CLINIC_RECOMMENDATION_REASON_SUMMARY', date_str, dept)
@@ -1663,7 +1680,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 # Fetch categorizing_raw_data filtered for the department
                 intervention_df = fetch_table_df(conn, 'CATEGORIZING_RAW_DATA', date_str, dept)
                 if not intervention_df.empty:
-                    gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(intervention_df))
+                    gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(intervention_df, dept))
                 else:
                     print(f"   ℹ️ No categorizing data found for {dept}")
             except Exception as e:
@@ -1687,7 +1704,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 try:
                     policy_df = fetch_table_df(conn, 'POLICY_VIOLATION_RAW_DATA', date_str, dept)
                     if not policy_df.empty:
-                        gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(policy_df))
+                        gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(policy_df, dept))
                     else:
                         print(f"   ℹ️ No policy violation data found for {dept}")
                 except Exception as e:
@@ -1714,7 +1731,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 
                 # Upload combined data
                 if not combined_df.empty:
-                    gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(combined_df))
+                    gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(combined_df, dept))
                 else:
                     print(f"   ℹ️ No policy violation data found for {dept}")
         elif metric.extra_behavior == 'tools_quad_tabs':
@@ -1732,7 +1749,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 try:
                     missing_raw_df = fetch_table_df(conn, 'MISSING_TOOL_RAW_DATA', date_str, dept)
                     if not missing_raw_df.empty and gc.create_sheet_if_missing(spreadsheet_id, missing_raw_tab):
-                        gc.upload_dataframe(spreadsheet_id, missing_raw_tab, filter_llm_columns(missing_raw_df))
+                        gc.upload_dataframe(spreadsheet_id, missing_raw_tab, filter_llm_columns(missing_raw_df, dept))
                     else:
                         print(f"   ℹ️ No missing tool raw data found for {dept}")
                 except Exception as e:
@@ -1751,7 +1768,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 try:
                     wrong_raw_df = fetch_table_df(conn, 'WRONG_TOOL_RAW_DATA', date_str, dept)
                     if not wrong_raw_df.empty and gc.create_sheet_if_missing(spreadsheet_id, wrong_raw_tab):
-                        gc.upload_dataframe(spreadsheet_id, wrong_raw_tab, filter_llm_columns(wrong_raw_df))
+                        gc.upload_dataframe(spreadsheet_id, wrong_raw_tab, filter_llm_columns(wrong_raw_df, dept))
                     else:
                         print(f"   ℹ️ No wrong tool raw data found for {dept}")
                 except Exception as e:
@@ -1775,7 +1792,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 try:
                     tool_raw_df = fetch_table_df(conn, 'TOOL_RAW_DATA', date_str, dept)
                     if not tool_raw_df.empty and gc.create_sheet_if_missing(spreadsheet_id, raw_tab):
-                        gc.upload_dataframe(spreadsheet_id, raw_tab, filter_llm_columns(tool_raw_df))
+                        gc.upload_dataframe(spreadsheet_id, raw_tab, filter_llm_columns(tool_raw_df, dept))
                     else:
                         print(f"   ℹ️ No tool raw data found for {dept}")
                 except Exception as e:
@@ -1790,7 +1807,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 except Exception as e:
                     print(f"   ❌ Failed fetching TOOL_SUMMARY for {dept}: {e}")
         else:
-            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df))
+            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df, dept))
 
 
 # =============================
