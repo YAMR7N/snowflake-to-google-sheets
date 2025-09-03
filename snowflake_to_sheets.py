@@ -1061,6 +1061,15 @@ def build_metrics_registry() -> Dict[str, Metric]:
             single_sheet_id=None,
             extra_behavior='tools_quad_tabs'
         ),
+        
+        'shadowing_automation': Metric(
+            name='shadowing_automation',
+            raw_table='UNIQUE_ISSUES_RAW_DATA',
+            departments=['MV Resolvers'],
+            sheet_ids={'MV Resolvers': '187CfNw9qnClDj6_HmOwQ-lWLktll5u4IV-itdsUSGOY'},
+            single_sheet_id=None,
+            extra_behavior='shadowing_dual_tabs'
+        ),
     }
 
     # Attach snapshot sheets mapping for later lookups
@@ -1336,6 +1345,15 @@ COLUMN_CANDIDATES = {
     'CONVERSATION_CONTENT': ['CONVERSATION_CONTENT', 'conversation_content', 'CONVERSATION', 'conversation', 'CONTENT', 'content'],
     'LLM_RESPONSE': ['LLM_RESPONSE', 'llm_response', 'LLM_OUTPUT', 'llm_output', 'RESPONSE', 'response'],
     'SYSTEM_PROMPT_SNAPSHOT': ['SYSTEM_PROMPT_SNAPSHOT', 'system_prompt_snapshot', 'SYSTEM_PROMPT', 'system_prompt', 'PROMPT_SNAPSHOT', 'prompt_snapshot'],
+    
+    # Shadowing automation raw data columns
+    'ISSUE_ID': ['ISSUE_ID', 'issue_id', 'Issue_ID'],
+    'REPORTER': ['REPORTER', 'reporter', 'Reporter'],
+    'ISSUE_STATUS': ['ISSUE_STATUS', 'issue_status', 'Issue_Status'],
+    'ISSUE_TYPE': ['ISSUE_TYPE', 'issue_type', 'Issue_Type'],
+    'CREATION_DATE': ['CREATION_DATE', 'creation_date', 'Creation_Date'],
+    'ISSUE_DESCRIPTION': ['ISSUE_DESCRIPTION', 'issue_description', 'Issue_Description'],
+    'LLM_OUTPUT_RAW': ['LLM_OUTPUT_RAW', 'llm_output_raw', 'LLM_Output_Raw', 'LLM_OUTPUT', 'llm_output'],
 }
 
 
@@ -1378,6 +1396,36 @@ def filter_llm_columns(df: pd.DataFrame, department: str = None) -> pd.DataFrame
     return result
 
 
+def filter_shadowing_columns(df: pd.DataFrame, target_columns: List[str]) -> pd.DataFrame:
+    """Return DataFrame with only shadowing automation specific columns, mapping common aliases.
+    Adds empty columns if not found; logs mapping results.
+    """
+    result = pd.DataFrame()
+    src_cols_lower = {c.lower(): c for c in df.columns}
+
+    def pick_column(candidates: List[str]) -> Optional[str]:
+        for cand in candidates:
+            if cand in df.columns:
+                return cand
+            low = cand.lower()
+            if low in src_cols_lower:
+                return src_cols_lower[low]
+        return None
+
+    for target in target_columns:
+        cand_list = COLUMN_CANDIDATES.get(target, [target])
+        src = pick_column(cand_list)
+        if src is not None:
+            result[target] = df[src]
+            if target != src:
+                print(f"   ↪︎ Mapped column '{src}' → '{target}'")
+        else:
+            print(f"   ⚠️ Source column for '{target}' not found; filling empty")
+            result[target] = ''
+
+    return result
+
+
 SUMMARY_COLUMN_TARGETS = {
     'policy_escalation': ['POLICY', 'COUNT', 'PERCENTAGE'],
     'categorizing': [
@@ -1391,6 +1439,7 @@ SUMMARY_COLUMN_TARGETS = {
     ],
     'loss_of_interest': ['RECRUITMENT_STAGE', 'MAIN_REASON', 'MAIN_REASON_COUNT', 'SUB_REASON', 'SUB_REASON_COUNT'],
     'clinic_recommendation_reason': ['CATEGORY_NAME', 'NUMBER_OF_CHATS'],
+    'shadowing_automation': ['UNIQUE_ISSUES', 'CATEGORY', 'SEVERITY', 'FREQUENCY', 'STATUS', 'ISSUE_IDS'],
 }
 
 SUMMARY_COLUMN_CANDIDATES = {
@@ -1421,6 +1470,13 @@ SUMMARY_COLUMN_CANDIDATES = {
 
     'CATEGORY_NAME': ['CATEGORY_NAME', 'Category_Name', 'category_name', 'Category Name'],
     'NUMBER_OF_CHATS': ['NUMBER_OF_CHATS', 'Number_Of_Chats', 'number_of_chats', 'Number of Chats', 'Chat Count', 'CHAT_COUNT'],
+    
+    # Shadowing automation columns
+    'UNIQUE_ISSUES': ['UNIQUE_ISSUES', 'unique_issues', 'Unique_Issues'],
+    'SEVERITY': ['SEVERITY', 'severity', 'Severity'],
+    'FREQUENCY': ['FREQUENCY', 'frequency', 'Frequency', 'COUNT', 'Count', 'count'],
+    'STATUS': ['STATUS', 'status', 'Status'],
+    'ISSUE_IDS': ['ISSUE_IDS', 'issue_ids', 'Issue_IDs', 'Issue IDs'],
 }
 
 
@@ -1806,6 +1862,34 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                         print(f"   ℹ️ No tool summary data found for {dept}")
                 except Exception as e:
                     print(f"   ❌ Failed fetching TOOL_SUMMARY for {dept}: {e}")
+        elif metric.extra_behavior == 'shadowing_dual_tabs':
+            # Shadowing automation: dual tabs (raw + summary)
+            print(f"   🕵️ Processing shadowing automation for {dept}")
+            
+            # Define specific columns for shadowing automation raw data
+            shadowing_raw_columns = ['CONVERSATION_ID', 'ISSUE_ID', 'REPORTER', 'ISSUE_STATUS', 
+                                   'ISSUE_TYPE', 'CREATION_DATE', 'ISSUE_DESCRIPTION', 'LLM_OUTPUT_RAW']
+            
+            # Upload raw data to main date tab
+            if not df.empty:
+                # Filter to shadowing automation specific columns
+                filtered_raw = filter_shadowing_columns(df, shadowing_raw_columns)
+                gc.upload_dataframe(spreadsheet_id, sheet_name, filtered_raw)
+            else:
+                print(f"   ℹ️ No shadowing automation raw data found for {dept}")
+            
+            # Upload summary to date-summary tab
+            try:
+                summary_df = fetch_table_df(conn, 'UNIQUE_ISSUES_SUMMARY', date_str, dept)
+                if not summary_df.empty:
+                    summary_tab = f"{sheet_name}-summary"
+                    if gc.create_sheet_if_missing(spreadsheet_id, summary_tab):
+                        filtered_summary = filter_summary_columns('shadowing_automation', summary_df)
+                        gc.upload_dataframe(spreadsheet_id, summary_tab, filtered_summary)
+                else:
+                    print(f"   ℹ️ No shadowing automation summary data found for {dept}")
+            except Exception as e:
+                print(f"   ❌ Failed fetching UNIQUE_ISSUES_SUMMARY: {e}")
         else:
             gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df, dept))
 
@@ -1850,6 +1934,7 @@ def main():
             'transfer_escalation',
             'transfer_known_flow',
             'tools',
+            'shadowing_automation',
         ]
 
         # Optional: run a single metric by setting ONLY_METRIC in environment/.env
@@ -1890,6 +1975,9 @@ def main():
                 'tool': 'tools',
                 'loss_of_interest': 'loss_of_interest',
                 'loi': 'loss_of_interest',
+                'shadowing_automation': 'shadowing_automation',
+                'shadowing': 'shadowing_automation',
+                'sa_automation': 'shadowing_automation',
             }
             selected = aliases.get(key_norm, key_norm)
             if selected in ordered_metric_keys:
@@ -1929,6 +2017,7 @@ def main():
                     'transfer_known_flow': {'TRANSFER_KNOWN_FLOW_COMBINED'},
                     'loss_of_interest': set(),  # No snapshot fields for loss_of_interest
                     'tools': set(),  # Tools snapshot columns will be added later
+                    'shadowing_automation': set(),  # No snapshot fields for shadowing automation
                 }
                 snapshot_allowed_fields = metric_to_fields.get(metric_key)
 
