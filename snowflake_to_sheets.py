@@ -1535,48 +1535,36 @@ def prettify_summary_headers(metric_key: str, dept: str, df: pd.DataFrame) -> pd
 
 
 def format_loss_of_interest_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """Format loss of interest summary data with count(percentage%) format."""
+    """Format loss of interest summary data with count(percentage%) format.
+    Uses percentage data as-is from Snowflake without additional formatting.
+    """
     if df.empty:
         return df
     
     formatted_df = df.copy()
     
-    # Format MAIN_REASON_COUNT to show count(percentage%)
+    # Format MAIN_REASON_COUNT to show count(percentage%) 
+    # Use percentage data directly from Snowflake without additional formatting
     if 'MAIN_REASON_COUNT' in formatted_df.columns and 'MAIN_REASON_PCT' in formatted_df.columns:
         for idx, row in formatted_df.iterrows():
             count = row.get('MAIN_REASON_COUNT')
             pct = row.get('MAIN_REASON_PCT')
             
             if pd.notna(count) and pd.notna(pct):
-                # Format percentage
-                try:
-                    if isinstance(pct, str) and '%' in pct:
-                        pct_str = pct
-                    else:
-                        pct_num = float(pct)
-                        pct_str = f"{pct_num:.1f}%".rstrip('0').rstrip('.') + '%'
-                except Exception:
-                    pct_str = str(pct)
-                
+                # Use percentage as-is from Snowflake (already formatted)
+                pct_str = str(pct) if pct is not None else ''
                 formatted_df.at[idx, 'MAIN_REASON_COUNT'] = f"{count} ({pct_str})"
     
     # Format SUB_REASON_COUNT to show count(percentage%)
+    # Use percentage data directly from Snowflake without additional formatting  
     if 'SUB_REASON_COUNT' in formatted_df.columns and 'SUB_REASON_PCT' in formatted_df.columns:
         for idx, row in formatted_df.iterrows():
             count = row.get('SUB_REASON_COUNT')
             pct = row.get('SUB_REASON_PCT')
             
             if pd.notna(count) and pd.notna(pct):
-                # Format percentage
-                try:
-                    if isinstance(pct, str) and '%' in pct:
-                        pct_str = pct
-                    else:
-                        pct_num = float(pct)
-                        pct_str = f"{pct_num:.1f}%".rstrip('0').rstrip('.') + '%'
-                except Exception:
-                    pct_str = str(pct)
-                
+                # Use percentage as-is from Snowflake (already formatted)
+                pct_str = str(pct) if pct is not None else ''
                 formatted_df.at[idx, 'SUB_REASON_COUNT'] = f"{count} ({pct_str})"
     
     return formatted_df
