@@ -1016,7 +1016,7 @@ def build_metrics_registry() -> Dict[str, Metric]:
             departments=['Filipina', 'MV Resolvers'], 
             sheet_ids={
                 'Filipina': '1wOSiIAbxgCPUIJXbZFXB6TwCBHAutGeSsjM9JOEgrrY',
-                'MV Resolvers': 'NEEDS_SEPARATE_SHEET_ID'  # ⚠️ CRITICAL: MV Resolvers MUST have different sheet ID
+                'MV Resolvers': '1-jWEOvfAIuGBrkSQQJIMAaYnp5phFIXHeoc83_Kzqn4'
             },
             extra_behavior='policy_violation_combined'
         ),
