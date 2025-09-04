@@ -1158,23 +1158,44 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
         
         # Handle combined policy fields that don't exist directly in summary_row
         if field == 'MISSING_POLICY_COMBINED':
-            a_value = summary_row.get('A_MISSING_POLICY_PERCENTAGE')
-            b_value = summary_row.get('B_MISSING_POLICY_PERCENTAGE')
-            if a_value is None and b_value is None:
-                continue
-            value = (a_value, b_value)  # Store as tuple for special processing
+            if dept_name == 'CC Sales':
+                # CC Sales uses direct field names
+                direct_value = summary_row.get('MISSING_POLICY_PERCENTAGE')
+                if direct_value is None:
+                    continue
+                value = direct_value  # Single value for CC Sales
+            else:
+                # MV Resolvers and others use A/B format
+                a_value = summary_row.get('A_MISSING_POLICY_PERCENTAGE')
+                b_value = summary_row.get('B_MISSING_POLICY_PERCENTAGE')
+                if a_value is None and b_value is None:
+                    continue
+                value = (a_value, b_value)  # Store as tuple for special processing
         elif field == 'UNCLEAR_POLICY_COMBINED':
-            a_value = summary_row.get('A_UNCLEAR_POLICY_PERCENTAGE')
-            b_value = summary_row.get('B_UNCLEAR_POLICY_PERCENTAGE')
-            if a_value is None and b_value is None:
-                continue
-            value = (a_value, b_value)  # Store as tuple for special processing
+            if dept_name == 'CC Sales':
+                # CC Sales uses direct field names
+                direct_value = summary_row.get('UNCLEAR_POLICY_PERCENTAGE')
+                if direct_value is None:
+                    continue
+                value = direct_value  # Single value for CC Sales
+            else:
+                # MV Resolvers and others use A/B format
+                a_value = summary_row.get('A_UNCLEAR_POLICY_PERCENTAGE')
+                b_value = summary_row.get('B_UNCLEAR_POLICY_PERCENTAGE')
+                if a_value is None and b_value is None:
+                    continue
+                value = (a_value, b_value)  # Store as tuple for special processing
         elif field == 'WRONG_POLICY_COMBINED':
-            a_value = summary_row.get('A_WRONG_POLICY_PERCENTAGE')
-            b_value = summary_row.get('B_WRONG_POLICY_PERCENTAGE')
-            if a_value is None and b_value is None:
+            if dept_name == 'CC Sales':
+                # CC Sales doesn't have WRONG_POLICY field, skip
                 continue
-            value = (a_value, b_value)  # Store as tuple for special processing
+            else:
+                # MV Resolvers and others use A/B format
+                a_value = summary_row.get('A_WRONG_POLICY_PERCENTAGE')
+                b_value = summary_row.get('B_WRONG_POLICY_PERCENTAGE')
+                if a_value is None and b_value is None:
+                    continue
+                value = (a_value, b_value)  # Store as tuple for special processing
         elif field == 'TRANSFER_ESCALATION_COMBINED':
             a_value = summary_row.get('TRANSFER_ESCALATION_PERCENTAGE_A')
             b_value = summary_row.get('TRANSFER_ESCALATION_PERCENTAGE_B')
@@ -1281,9 +1302,7 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
             counted = int(round(frac * total_chats))
             display_value = f"{counted} ({percent_str})"
         elif field in {'MISSING_POLICY_COMBINED', 'UNCLEAR_POLICY_COMBINED', 'WRONG_POLICY_COMBINED', 'TRANSFER_ESCALATION_COMBINED', 'TRANSFER_KNOWN_FLOW_COMBINED'}:
-            # Policy violation & transfer combined formatting: "A_value (B_value)"
-            a_value, b_value = value  # Unpack the tuple
-            
+            # Policy violation & transfer combined formatting
             def format_percentage(val):
                 if val is None or pd.isna(val):
                     return "N/A"
@@ -1298,9 +1317,15 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
                 except Exception:
                     return str(val) if val is not None else "N/A"
             
-            a_str = format_percentage(a_value)
-            b_str = format_percentage(b_value)
-            display_value = f"{a_str} ({b_str})"
+            if field in {'MISSING_POLICY_COMBINED', 'UNCLEAR_POLICY_COMBINED', 'WRONG_POLICY_COMBINED'} and dept_name == 'CC Sales':
+                # CC Sales: single value formatting
+                display_value = format_percentage(value)
+            else:
+                # MV Resolvers and others: A_value (B_value) formatting
+                a_value, b_value = value  # Unpack the tuple
+                a_str = format_percentage(a_value)
+                b_str = format_percentage(b_value)
+                display_value = f"{a_str} ({b_str})"
         else:
             # Default formatting based on metric type: percent vs scalar
             try:
