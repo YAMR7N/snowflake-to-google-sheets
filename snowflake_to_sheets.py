@@ -1010,13 +1010,14 @@ def build_metrics_registry() -> Dict[str, Metric]:
             name='clinic_recommendation_reason', raw_table='CLINIC_RECOMMENDATION_REASON_RAW_DATA',
             departments=['Doctors'], sheet_ids={'Doctors': '1xFSfzL82Cdg3vV5jKlgzsaqsXds0AHftKTglPeuO0qo'}
         ),
-        # 16 Policy Violation (Filipina: POLICY_VIOLATION_RAW_DATA, MV_Resolvers: combined MISSING/UNCLEAR tables)
+        # 16 Policy Violation (All depts use POLICY_VIOLATION_RAW_DATA except MV_Resolvers: combined MISSING/UNCLEAR tables)
         'policy_violation': Metric(
-            name='policy_violation', raw_table=None,  # Multiple table sources, uploaded to single date tab
-            departments=['Filipina', 'MV Resolvers'], 
+            name='policy_violation', raw_table='POLICY_VIOLATION_RAW_DATA',  # Default table for most departments
+            departments=['Filipina', 'MV Resolvers', 'CC Sales'], 
             sheet_ids={
                 'Filipina': '1wOSiIAbxgCPUIJXbZFXB6TwCBHAutGeSsjM9JOEgrrY',
-                'MV Resolvers': '1-jWEOvfAIuGBrkSQQJIMAaYnp5phFIXHeoc83_Kzqn4'
+                'MV Resolvers': '1-jWEOvfAIuGBrkSQQJIMAaYnp5phFIXHeoc83_Kzqn4',
+                'CC Sales': '17qyGa_qLtDZY7TiAvlJ06-4NJv7htNAm1_25rJUJIgs'
             },
             extra_behavior='policy_violation_combined'
         ),
@@ -1743,18 +1744,8 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                     gc.upload_dataframe(spreadsheet_id, summary_tab, filter_summary_columns('categorizing', intervention_summary))
         elif metric.extra_behavior == 'policy_violation_combined':
             # Policy violation - upload whole table to single date tab
-            if dept == 'Filipina':
-                # Filipina uses POLICY_VIOLATION_RAW_DATA
-                try:
-                    policy_df = fetch_table_df(conn, 'POLICY_VIOLATION_RAW_DATA', date_str, dept)
-                    if not policy_df.empty:
-                        gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(policy_df, dept))
-                    else:
-                        print(f"   ℹ️ No policy violation data found for {dept}")
-                except Exception as e:
-                    print(f"   ❌ Failed fetching POLICY_VIOLATION_RAW_DATA: {e}")
-            else:
-                # Other departments (like MV_Resolvers) - combine separate tables
+            if dept == 'MV Resolvers':
+                # MV Resolvers uses combined MISSING_POLICY_RAW_DATA and UNCLEAR_POLICY_RAW_DATA
                 combined_df = pd.DataFrame()
                 
                 # Fetch missing policy data
@@ -1778,6 +1769,16 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                     gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(combined_df, dept))
                 else:
                     print(f"   ℹ️ No policy violation data found for {dept}")
+            else:
+                # All other departments (Filipina, CC Sales, etc.) use POLICY_VIOLATION_RAW_DATA
+                try:
+                    policy_df = fetch_table_df(conn, 'POLICY_VIOLATION_RAW_DATA', date_str, dept)
+                    if not policy_df.empty:
+                        gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(policy_df, dept))
+                    else:
+                        print(f"   ℹ️ No policy violation data found for {dept}")
+                except Exception as e:
+                    print(f"   ❌ Failed fetching POLICY_VIOLATION_RAW_DATA: {e}")
         elif metric.extra_behavior == 'tools_quad_tabs':
             # Tools metric - different behavior per department
             print(f"   🔧 Processing tools metric for {dept}")
