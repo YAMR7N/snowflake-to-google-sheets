@@ -1158,44 +1158,44 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
         
         # Handle combined policy fields that don't exist directly in summary_row
         if field == 'MISSING_POLICY_COMBINED':
-            if dept_name == 'CC Sales':
-                # CC Sales uses direct field names
-                direct_value = summary_row.get('MISSING_POLICY_PERCENTAGE')
-                if direct_value is None:
-                    continue
-                value = direct_value  # Single value for CC Sales
-            else:
-                # MV Resolvers and others use A/B format
+            if dept_name == 'Filipina':
+                # Filipina uses A/B format
                 a_value = summary_row.get('A_MISSING_POLICY_PERCENTAGE')
                 b_value = summary_row.get('B_MISSING_POLICY_PERCENTAGE')
                 if a_value is None and b_value is None:
                     continue
                 value = (a_value, b_value)  # Store as tuple for special processing
-        elif field == 'UNCLEAR_POLICY_COMBINED':
-            if dept_name == 'CC Sales':
-                # CC Sales uses direct field names
-                direct_value = summary_row.get('UNCLEAR_POLICY_PERCENTAGE')
+            else:
+                # CC Sales and MV Resolvers use direct field names
+                direct_value = summary_row.get('MISSING_POLICY_PERCENTAGE')
                 if direct_value is None:
                     continue
-                value = direct_value  # Single value for CC Sales
-            else:
-                # MV Resolvers and others use A/B format
+                value = direct_value  # Single value for CC Sales and MV Resolvers
+        elif field == 'UNCLEAR_POLICY_COMBINED':
+            if dept_name == 'Filipina':
+                # Filipina uses A/B format
                 a_value = summary_row.get('A_UNCLEAR_POLICY_PERCENTAGE')
                 b_value = summary_row.get('B_UNCLEAR_POLICY_PERCENTAGE')
                 if a_value is None and b_value is None:
                     continue
                 value = (a_value, b_value)  # Store as tuple for special processing
-        elif field == 'WRONG_POLICY_COMBINED':
-            if dept_name == 'CC Sales':
-                # CC Sales doesn't have WRONG_POLICY field, skip
-                continue
             else:
-                # MV Resolvers and others use A/B format
+                # CC Sales and MV Resolvers use direct field names
+                direct_value = summary_row.get('UNCLEAR_POLICY_PERCENTAGE')
+                if direct_value is None:
+                    continue
+                value = direct_value  # Single value for CC Sales and MV Resolvers
+        elif field == 'WRONG_POLICY_COMBINED':
+            if dept_name == 'Filipina':
+                # Only Filipina has WRONG_POLICY fields (A/B format)
                 a_value = summary_row.get('A_WRONG_POLICY_PERCENTAGE')
                 b_value = summary_row.get('B_WRONG_POLICY_PERCENTAGE')
                 if a_value is None and b_value is None:
                     continue
                 value = (a_value, b_value)  # Store as tuple for special processing
+            else:
+                # CC Sales and MV Resolvers don't have WRONG_POLICY field, skip
+                continue
         elif field == 'TRANSFER_ESCALATION_COMBINED':
             a_value = summary_row.get('TRANSFER_ESCALATION_PERCENTAGE_A')
             b_value = summary_row.get('TRANSFER_ESCALATION_PERCENTAGE_B')
@@ -1275,8 +1275,8 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
                 percent_str = str(percent)
             count_str = str(count) if count is not None else ''
             display_value = f"{count_str} ({percent_str})".strip()
-        elif dept_name == 'Doctors' and field in {'CLIENT_SUSPECTING_AI_PERCENTAGE', 'CLARITY_SCORE_PERCENTAGE'} and conn is not None:
-            # Doctors-specific format: count (percentage%) where count is out of total chats from sa_raw_data
+        elif dept_name == 'Doctors' and field == 'CLIENT_SUSPECTING_AI_PERCENTAGE' and conn is not None:
+            # Doctors-specific format for CLIENT_SUSPECTING_AI: count (percentage%) where count is out of total chats from sa_raw_data
             # Derive fraction from percentage value (supports either fraction or percent number)
             percent = value
             try:
@@ -1301,6 +1301,22 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
             total_chats = fetch_total_chats(conn, date_str, dept_name)
             counted = int(round(frac * total_chats))
             display_value = f"{counted} ({percent_str})"
+        elif dept_name == 'Doctors' and field == 'CLARITY_SCORE_PERCENTAGE':
+            # Doctors clarity score: use direct CLARITY_SCORE_COUNT and CLARITY_SCORE_PERCENTAGE from doctors_summary
+            percent = value
+            count = summary_row.get('CLARITY_SCORE_COUNT')
+            # Format percentage without additional processing since it's already from Snowflake
+            try:
+                if isinstance(percent, str) and '%' in percent:
+                    percent_str = percent
+                else:
+                    pnum = float(percent)
+                    pstr_raw = ("%f" % pnum).rstrip('0').rstrip('.')
+                    percent_str = f"{pstr_raw}%"
+            except Exception:
+                percent_str = str(percent)
+            count_str = str(count) if count is not None else ''
+            display_value = f"{count_str} ({percent_str})".strip()
         elif field in {'MISSING_POLICY_COMBINED', 'UNCLEAR_POLICY_COMBINED', 'WRONG_POLICY_COMBINED', 'TRANSFER_ESCALATION_COMBINED', 'TRANSFER_KNOWN_FLOW_COMBINED'}:
             # Policy violation & transfer combined formatting
             def format_percentage(val):
@@ -1317,15 +1333,15 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
                 except Exception:
                     return str(val) if val is not None else "N/A"
             
-            if field in {'MISSING_POLICY_COMBINED', 'UNCLEAR_POLICY_COMBINED', 'WRONG_POLICY_COMBINED'} and dept_name == 'CC Sales':
-                # CC Sales: single value formatting
-                display_value = format_percentage(value)
-            else:
-                # MV Resolvers and others: A_value (B_value) formatting
+            if field in {'MISSING_POLICY_COMBINED', 'UNCLEAR_POLICY_COMBINED', 'WRONG_POLICY_COMBINED'} and dept_name == 'Filipina':
+                # Filipina: A_value (B_value) formatting
                 a_value, b_value = value  # Unpack the tuple
                 a_str = format_percentage(a_value)
                 b_str = format_percentage(b_value)
                 display_value = f"{a_str} ({b_str})"
+            else:
+                # CC Sales and MV Resolvers: single value formatting
+                display_value = format_percentage(value)
         else:
             # Default formatting based on metric type: percent vs scalar
             try:
