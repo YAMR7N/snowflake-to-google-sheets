@@ -1142,13 +1142,14 @@ PERCENT_FIELDS = {
 
 
 def create_consolidated_summary_sheet(gc: SheetsClient, consolidated_sheet_id: str, date_str: str, conn) -> None:
-    """Create consolidated summary sheet with all department summary tables.
+    """Create consolidated summary sheet with ALL department summary data.
     
     Layout:
     - Copies from 'template' sheet first
-    - Each summary table takes 2 rows
+    - Each summary table takes 2 rows with ALL columns from department summary
     - 2 empty rows between each table
     - First table starts at row 3
+    - No column filtering - includes ENTIRE department summaries
     """
     print(f"📋 Creating consolidated summary sheet for {date_str}")
     
@@ -1202,36 +1203,40 @@ def create_consolidated_summary_sheet(gc: SheetsClient, consolidated_sheet_id: s
                 continue
                 
             # Prepare department summary as 2-row table
-            # Row 1: Department name and key metrics headers  
+            # Row 1: Department name and ALL metrics headers  
             # Row 2: Values
-            # Include key summary metrics (filter out internal fields)
-            key_metrics = []
-            key_values = []
+            # Include ALL summary metrics without any filtering
+            all_metrics = []
+            all_values = []
             
             for col in summary_row.index:
-                # Skip internal/system fields and include meaningful metrics
-                if not col.upper().startswith(('TIMESTAMP', 'DATE', 'DEPARTMENT')) and col:
-                    key_metrics.append(col)
+                # Include ALL columns - no filtering
+                if col:  # Only check that column name is not empty
+                    all_metrics.append(col)
                     value = summary_row.get(col, '')
                     # Clean and format the value
                     if pd.notna(value) and value != '':
-                        key_values.append(str(value))
+                        all_values.append(str(value))
                     else:
-                        key_values.append('')
-            
-            # Limit to reasonable number of columns to fit in sheet
-            max_cols = 15
-            if len(key_metrics) > max_cols:
-                key_metrics = key_metrics[:max_cols]
-                key_values = key_values[:max_cols]
+                        all_values.append('')
                 
-            dept_header = [f"{dept} Summary", "Date", "Department"] + key_metrics
-            dept_values = ["", date_str, dept] + key_values
+            dept_header = [f"{dept} Summary", "Date", "Department"] + all_metrics
+            dept_values = ["", date_str, dept] + all_values
             
             summary_data = [dept_header, dept_values]
             
-            # Write to sheet at current_row
-            range_name = f"{target_sheet}!A{current_row}:Z{current_row + 1}"
+            # Write to sheet at current_row (use wide range to accommodate all columns)
+            # Calculate end column based on actual data width
+            num_cols = len(dept_header)
+            if num_cols <= 26:
+                end_col = chr(64 + num_cols)  # A=65, so 64+1=A, 64+26=Z
+            else:
+                # For columns beyond Z (AA, AB, etc.)
+                first_letter = chr(64 + ((num_cols - 1) // 26))
+                second_letter = chr(64 + ((num_cols - 1) % 26) + 1)
+                end_col = first_letter + second_letter
+            
+            range_name = f"{target_sheet}!A{current_row}:{end_col}{current_row + 1}"
             gc._execute_with_retry(
                 f"Write {dept} summary",
                 lambda: gc.service.spreadsheets().values().update(
