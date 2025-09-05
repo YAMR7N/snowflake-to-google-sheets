@@ -1372,7 +1372,7 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
 # Per-metric raw upload
 # =============================
 
-TARGET_LLM_COLUMNS = ['CONVERSATION_ID', 'MODEL_NAME', 'CONVERSATION_CONTENT', 'LLM_RESPONSE']
+TARGET_LLM_COLUMNS = ['CONVERSATION_ID', 'MODEL_NAME', 'CONVERSATION_CONTENT', 'LLM_RESPONSE', 'TOKENS_BREAKDOWN']
 
 # Additional columns for specific departments
 DEPT_SPECIFIC_COLUMNS = {
@@ -1396,6 +1396,9 @@ COLUMN_CANDIDATES = {
     'CREATION_DATE': ['CREATION_DATE', 'creation_date', 'Creation_Date'],
     'ISSUE_DESCRIPTION': ['ISSUE_DESCRIPTION', 'issue_description', 'Issue_Description'],
     'LLM_OUTPUT_RAW': ['LLM_OUTPUT_RAW', 'llm_output_raw', 'LLM_Output_Raw', 'LLM_OUTPUT', 'llm_output'],
+    
+    # Tokens breakdown column
+    'TOKENS_BREAKDOWN': ['TOKENS_BREAKDOWN', 'tokens_breakdown', 'Tokens_Breakdown', 'TOKEN_BREAKDOWN', 'token_breakdown', 'TOKENS', 'tokens'],
 }
 
 
