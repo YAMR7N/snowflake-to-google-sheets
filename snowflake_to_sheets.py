@@ -1141,6 +1141,118 @@ PERCENT_FIELDS = {
 }
 
 
+def create_consolidated_summary_sheet(gc: SheetsClient, consolidated_sheet_id: str, date_str: str, conn) -> None:
+    """Create consolidated summary sheet with all department summary tables.
+    
+    Layout:
+    - Copies from 'template' sheet first
+    - Each summary table takes 2 rows
+    - 2 empty rows between each table
+    - First table starts at row 3
+    """
+    print(f"📋 Creating consolidated summary sheet for {date_str}")
+    
+    template_sheet = "template"
+    target_sheet = date_str
+    
+    # Copy template to new sheet
+    try:
+        # Check if template exists and copy it
+        print(f"   📄 Copying from template sheet...")
+        
+        # Read template content
+        template_res = gc._execute_with_retry(
+            f"Read template {template_sheet}",
+            lambda: gc.service.spreadsheets().values().get(
+                spreadsheetId=consolidated_sheet_id,
+                range=f"{template_sheet}!A:Z"
+            ).execute()
+        )
+        template_values = template_res.get('values', [])
+        
+        # Create new sheet with date name
+        if gc.create_sheet_if_missing(consolidated_sheet_id, target_sheet):
+            # Clear and copy template content if any
+            if template_values:
+                gc._execute_with_retry(
+                    f"Copy template to {target_sheet}",
+                    lambda: gc.service.spreadsheets().values().update(
+                        spreadsheetId=consolidated_sheet_id,
+                        range=f"{target_sheet}!A1",
+                        valueInputOption='RAW',
+                        body={'values': template_values}
+                    ).execute()
+                )
+                print(f"   ✅ Template copied to {target_sheet}")
+        
+    except Exception as e:
+        print(f"   ⚠️ Could not copy template (proceeding anyway): {e}")
+        # Create empty sheet if template copy fails
+        gc.create_sheet_if_missing(consolidated_sheet_id, target_sheet)
+    
+    # Collect all department summaries
+    current_row = 3  # Start at row 3 as requested
+    
+    for dept in DEPARTMENTS.keys():
+        print(f"   📊 Processing summary for {dept}")
+        try:
+            summary_row = fetch_summary_row(conn, dept, date_str)
+            if summary_row is None:
+                print(f"   ⚠️ No summary data found for {dept}")
+                continue
+                
+            # Prepare department summary as 2-row table
+            # Row 1: Department name and key metrics headers  
+            # Row 2: Values
+            # Include key summary metrics (filter out internal fields)
+            key_metrics = []
+            key_values = []
+            
+            for col in summary_row.index:
+                # Skip internal/system fields and include meaningful metrics
+                if not col.upper().startswith(('TIMESTAMP', 'DATE', 'DEPARTMENT')) and col:
+                    key_metrics.append(col)
+                    value = summary_row.get(col, '')
+                    # Clean and format the value
+                    if pd.notna(value) and value != '':
+                        key_values.append(str(value))
+                    else:
+                        key_values.append('')
+            
+            # Limit to reasonable number of columns to fit in sheet
+            max_cols = 15
+            if len(key_metrics) > max_cols:
+                key_metrics = key_metrics[:max_cols]
+                key_values = key_values[:max_cols]
+                
+            dept_header = [f"{dept} Summary", "Date", "Department"] + key_metrics
+            dept_values = ["", date_str, dept] + key_values
+            
+            summary_data = [dept_header, dept_values]
+            
+            # Write to sheet at current_row
+            range_name = f"{target_sheet}!A{current_row}:Z{current_row + 1}"
+            gc._execute_with_retry(
+                f"Write {dept} summary",
+                lambda: gc.service.spreadsheets().values().update(
+                    spreadsheetId=consolidated_sheet_id,
+                    range=range_name,
+                    valueInputOption='RAW',
+                    body={'values': summary_data}
+                ).execute()
+            )
+            print(f"   ✅ {dept} summary written to rows {current_row}-{current_row + 1}")
+            
+            # Move to next position: current table (2 rows) + 2 empty rows = +4
+            current_row += 4
+            
+        except Exception as e:
+            print(f"   ❌ Failed to process {dept} summary: {e}")
+            continue
+    
+    print(f"   🎉 Consolidated summary sheet '{target_sheet}' created successfully")
+
+
 def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: str, date_str: str, summary_row: pd.Series, allowed_fields: Optional[set] = None, conn=None) -> None:
     print(f"📝 Updating snapshot sheet for {dept_name}")
     date_row, found_sheet = gc.find_date_row(snapshot_sheet_id, date_str, SNAPSHOT_SHEET_CANDIDATES)
@@ -2074,6 +2186,18 @@ def main():
                     print(f"   ❌ Snapshot update failed for {dept}: {e}")
         else:
             print("\n⏭️  Skipping snapshot updates (SKIP_SNAPSHOTS=true)")
+
+        # 3) Create consolidated summary sheet (optional)
+        skip_consolidated = os.getenv('SKIP_CONSOLIDATED', '').strip().lower() in {'1', 'true', 'yes'}
+        if not skip_consolidated:
+            print("\n📋 Creating consolidated summary sheet...")
+            consolidated_sheet_id = '1ddl4mL2D3Dc_cTGN8KorpEH0irntvYwPGrpAsv6M1P0'
+            try:
+                create_consolidated_summary_sheet(gc, consolidated_sheet_id, date_str, conn)
+            except Exception as e:
+                print(f"   ❌ Consolidated summary sheet creation failed: {e}")
+        else:
+            print("\n⏭️  Skipping consolidated summary sheet (SKIP_CONSOLIDATED=true)")
 
         print("\n✅ Completed Snowflake → Sheets for ", date_str)
     finally:
