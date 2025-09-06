@@ -1173,7 +1173,7 @@ def create_consolidated_summary_sheet(gc: SheetsClient, consolidated_sheet_id: s
         
         # Create new sheet with date name
         if gc.create_sheet_if_missing(consolidated_sheet_id, target_sheet):
-            # Clear and copy template content if any
+            # Copy template content (preserving formatting) if any
             if template_values:
                 gc._execute_with_retry(
                     f"Copy template to {target_sheet}",
