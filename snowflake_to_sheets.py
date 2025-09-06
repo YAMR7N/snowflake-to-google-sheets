@@ -1145,7 +1145,8 @@ def create_consolidated_summary_sheet(gc: SheetsClient, consolidated_sheet_id: s
     """Create consolidated summary sheet with ALL department summary data.
     
     Layout:
-    - Copies from 'template' sheet first
+    - Duplicates 'template' sheet (preserving ALL formatting, styles, colors, etc.)
+    - Renames duplicate to yyyy-mm-dd
     - Each summary table takes 2 rows with ALL columns from department summary
     - 2 empty rows between each table
     - First table starts at row 3
@@ -1156,39 +1157,51 @@ def create_consolidated_summary_sheet(gc: SheetsClient, consolidated_sheet_id: s
     template_sheet = "template"
     target_sheet = date_str
     
-    # Copy template to new sheet
+    # Duplicate template sheet and rename it
     try:
-        # Check if template exists and copy it
-        print(f"   📄 Copying from template sheet...")
+        print(f"   📄 Duplicating template sheet...")
         
-        # Read template content
-        template_res = gc._execute_with_retry(
-            f"Read template {template_sheet}",
-            lambda: gc.service.spreadsheets().values().get(
+        # First, get sheet metadata to find template sheet ID
+        sheet_metadata = gc._execute_with_retry(
+            "Get sheet metadata for template duplication",
+            lambda: gc.service.spreadsheets().get(
                 spreadsheetId=consolidated_sheet_id,
-                range=f"{template_sheet}!A:Z"
+                fields="sheets.properties"
             ).execute()
         )
-        template_values = template_res.get('values', [])
         
-        # Create new sheet with date name
-        if gc.create_sheet_if_missing(consolidated_sheet_id, target_sheet):
-            # Copy template content (preserving formatting) if any
-            if template_values:
-                gc._execute_with_retry(
-                    f"Copy template to {target_sheet}",
-                    lambda: gc.service.spreadsheets().values().update(
-                        spreadsheetId=consolidated_sheet_id,
-                        range=f"{target_sheet}!A1",
-                        valueInputOption='RAW',
-                        body={'values': template_values}
-                    ).execute()
-                )
-                print(f"   ✅ Template copied to {target_sheet}")
+        # Find template sheet ID
+        template_sheet_id = None
+        for sheet in sheet_metadata.get('sheets', []):
+            if sheet['properties']['title'] == template_sheet:
+                template_sheet_id = sheet['properties']['sheetId']
+                break
+        
+        if template_sheet_id is None:
+            raise Exception(f"Template sheet '{template_sheet}' not found")
+        
+        # Duplicate the template sheet
+        duplicate_request = {
+            'requests': [{
+                'duplicateSheet': {
+                    'sourceSheetId': template_sheet_id,
+                    'newSheetName': target_sheet
+                }
+            }]
+        }
+        
+        gc._execute_with_retry(
+            f"Duplicate template to {target_sheet}",
+            lambda: gc.service.spreadsheets().batchUpdate(
+                spreadsheetId=consolidated_sheet_id,
+                body=duplicate_request
+            ).execute()
+        )
+        print(f"   ✅ Template duplicated to {target_sheet} (preserving all formatting)")
         
     except Exception as e:
-        print(f"   ⚠️ Could not copy template (proceeding anyway): {e}")
-        # Create empty sheet if template copy fails
+        print(f"   ⚠️ Could not duplicate template (proceeding with empty sheet): {e}")
+        # Create empty sheet if template duplication fails
         gc.create_sheet_if_missing(consolidated_sheet_id, target_sheet)
     
     # Collect all department summaries
