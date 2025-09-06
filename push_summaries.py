@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
 Standalone script to push consolidated summaries only
+
+Features:
+- Duplicates 'template' sheet (preserving ALL formatting, styles, colors)
+- Renames duplicate to yyyy-mm-dd 
+- Fills in complete department summaries starting at row 3
+- Maintains proper 2-row + 2-separator spacing
+
 Usage: python3 push_summaries.py [DATE_STR]
 Example: python3 push_summaries.py 2024-01-15
 """
@@ -32,8 +39,8 @@ def main():
     consolidated_sheet_id = '1ddl4mL2D3Dc_cTGN8KorpEH0irntvYwPGrpAsv6M1P0'
     
     print(f"📋 Target sheet: {consolidated_sheet_id}")
-    print(f"📄 Template sheet: 'template'")
-    print(f"🎯 Target sheet name: '{date_str}'")
+    print(f"📄 Template sheet: 'template' (will be DUPLICATED with all formatting)")
+    print(f"🎯 Target sheet name: '{date_str}' (duplicate of template)")
     
     # Initialize clients
     print("\n🔌 Connecting to services...")
@@ -41,9 +48,10 @@ def main():
     conn = get_snowflake_connection()
     
     try:
-        print("\n📊 Creating consolidated summary sheet...")
+        print("\n📊 Duplicating template and creating consolidated summary sheet...")
         create_consolidated_summary_sheet(gc, consolidated_sheet_id, date_str, conn)
-        print(f"\n✅ Successfully created consolidated summary for {date_str}")
+        print(f"\n✅ Successfully duplicated template and created consolidated summary for {date_str}")
+        print(f"🎨 Template formatting preserved with complete department data")
         print(f"🔗 Check your Google Sheet: https://docs.google.com/spreadsheets/d/{consolidated_sheet_id}")
         
     except Exception as e:
