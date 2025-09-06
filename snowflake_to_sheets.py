@@ -1463,14 +1463,20 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
                 except Exception:
                     return str(val) if val is not None else "N/A"
             
-            if field in {'MISSING_POLICY_COMBINED', 'UNCLEAR_POLICY_COMBINED', 'WRONG_POLICY_COMBINED'} and dept_name == 'Filipina':
-                # Filipina: A_value (B_value) formatting
+            if field in {'TRANSFER_ESCALATION_COMBINED', 'TRANSFER_KNOWN_FLOW_COMBINED'}:
+                # Transfer fields: always A_value (B_value) formatting for all departments
+                a_value, b_value = value  # Unpack the tuple
+                a_str = format_percentage(a_value)
+                b_str = format_percentage(b_value)
+                display_value = f"{a_str} ({b_str})"
+            elif field in {'MISSING_POLICY_COMBINED', 'UNCLEAR_POLICY_COMBINED', 'WRONG_POLICY_COMBINED'} and dept_name == 'Filipina':
+                # Filipina policy fields: A_value (B_value) formatting
                 a_value, b_value = value  # Unpack the tuple
                 a_str = format_percentage(a_value)
                 b_str = format_percentage(b_value)
                 display_value = f"{a_str} ({b_str})"
             else:
-                # CC Sales and MV Resolvers: single value formatting
+                # CC Sales and MV Resolvers policy fields: single value formatting
                 display_value = format_percentage(value)
         else:
             # Default formatting based on metric type: percent vs scalar
