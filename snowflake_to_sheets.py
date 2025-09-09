@@ -1789,6 +1789,51 @@ def format_loss_of_interest_summary(df: pd.DataFrame) -> pd.DataFrame:
                 formatted_df.at[idx, 'SUB_REASON_COUNT'] = f"{count} ({pct_str})"
     
     return formatted_df
+
+
+def post_process_total_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Post-process summary tables to show '-' in TOTAL rows for COUNT, CATEGORY_PCT, and COVERAGE_PER_CATEGORY_PCT.
+    Used for Doctors Intervention Analysis and MV Resolvers Categorisation summary tables.
+    """
+    if df.empty:
+        return df
+    
+    processed_df = df.copy()
+    
+    # Find the CATEGORY column (case-insensitive)
+    category_col = None
+    for col in processed_df.columns:
+        if col.upper() == 'CATEGORY':
+            category_col = col
+            break
+    
+    if category_col is None:
+        # No CATEGORY column found, return as-is
+        return processed_df
+    
+    # Find TOTAL rows (case-insensitive)
+    total_mask = processed_df[category_col].astype(str).str.upper() == 'TOTAL'
+    
+    if not total_mask.any():
+        # No TOTAL rows found
+        return processed_df
+    
+    # Columns to replace with "-" in TOTAL rows
+    columns_to_dash = ['COUNT', 'CATEGORY_PCT', 'COVERAGE_PER_CATEGORY_PCT']
+    
+    for col_name in columns_to_dash:
+        # Find the actual column name (case-insensitive)
+        actual_col = None
+        for col in processed_df.columns:
+            if col.upper() == col_name:
+                actual_col = col
+                break
+        
+        if actual_col is not None:
+            # Replace values in TOTAL rows with "-"
+            processed_df.loc[total_mask, actual_col] = "-"
+    
+    return processed_df
 def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[str, str], date_str: str, conn) -> None:
     if not metric.raw_table and metric.extra_behavior not in ['policy_violation_combined', 'intervention_categorizing_filter', 'tools_quad_tabs', 'merge_consecutive_cells']:
         print(f"➡️  {metric.name}: Placeholder only. Skipping upload.")
@@ -1884,6 +1929,9 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 key = 'categorizing_doctors' if dept == 'Doctors' else 'categorizing'
                 filtered = filter_summary_columns(key, summary_df)
                 filtered = prettify_summary_headers('categorizing' if dept == 'MV Resolvers' else key, dept, filtered)
+                # Post-process TOTAL rows for MV Resolvers categorizing summary
+                if dept == 'MV Resolvers':
+                    filtered = post_process_total_rows(filtered)
                 gc.upload_dataframe(spreadsheet_id, report_tab, filtered)
             else:
                 if gc.create_sheet_if_missing(spreadsheet_id, report_tab):
@@ -1961,7 +2009,10 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
             if not intervention_summary.empty:
                 summary_tab = f"{sheet_name}-summary"
                 if gc.create_sheet_if_missing(spreadsheet_id, summary_tab):
-                    gc.upload_dataframe(spreadsheet_id, summary_tab, filter_summary_columns('categorizing', intervention_summary))
+                    filtered_intervention = filter_summary_columns('categorizing', intervention_summary)
+                    # Post-process TOTAL rows for Doctors intervention analysis summary
+                    filtered_intervention = post_process_total_rows(filtered_intervention)
+                    gc.upload_dataframe(spreadsheet_id, summary_tab, filtered_intervention)
         elif metric.extra_behavior == 'policy_violation_combined':
             # Policy violation - upload whole table to single date tab
             if dept == 'MV Resolvers':
@@ -2087,14 +2138,22 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
             else:
                 print(f"   ℹ️ No shadowing automation raw data found for {dept}")
             
-            # Upload summary to date-summary tab
+            # Upload summary to date-summary tab and also to "unique issues" tab
             try:
                 summary_df = fetch_table_df(conn, 'UNIQUE_ISSUES_SUMMARY', date_str, dept)
                 if not summary_df.empty:
+                    filtered_summary = filter_summary_columns('shadowing_automation', summary_df)
+                    
+                    # Upload to date-summary tab
                     summary_tab = f"{sheet_name}-summary"
                     if gc.create_sheet_if_missing(spreadsheet_id, summary_tab):
-                        filtered_summary = filter_summary_columns('shadowing_automation', summary_df)
                         gc.upload_dataframe(spreadsheet_id, summary_tab, filtered_summary)
+                    
+                    # Also copy content and upload to "unique issues" tab
+                    unique_issues_tab = "unique issues"
+                    if gc.create_sheet_if_missing(spreadsheet_id, unique_issues_tab):
+                        gc.upload_dataframe(spreadsheet_id, unique_issues_tab, filtered_summary)
+                        print(f"   📋 Summary data also uploaded to '{unique_issues_tab}' tab")
                 else:
                     print(f"   ℹ️ No shadowing automation summary data found for {dept}")
             except Exception as e:
