@@ -1115,6 +1115,8 @@ SNAPSHOT_COLUMN_CANDIDATES: Dict[str, List[str]] = {
     'WRONG_POLICY_COMBINED': ['Wrong policy', 'Wrong Policy', '% Wrong Policy', 'Wrong Policy %'],
     'TRANSFER_ESCALATION_COMBINED': ['Transfers due to escalations', 'Transfer Escalation', '% Transfer Escalation', 'Transfer Escalation %'],
     'TRANSFER_KNOWN_FLOW_COMBINED': ['Transfers due to known flows', 'Transfer Known Flow', '% Transfer Known Flow', 'Transfer Known Flow %'],
+    'WRONG_TOOL_COMBINED': ['Wrong tool called', 'Wrong Tool Called', 'Wrong tool', 'Wrong Tool'],
+    'MISSING_TOOL_COMBINED': ['Missed to be called', 'Missed to be Called', 'Missed tool', 'Missing tool'],
 }
 
 PERCENT_FIELDS = {
@@ -1138,6 +1140,8 @@ PERCENT_FIELDS = {
     'WRONG_POLICY_COMBINED',
     'TRANSFER_ESCALATION_COMBINED',
     'TRANSFER_KNOWN_FLOW_COMBINED',
+    'WRONG_TOOL_COMBINED',
+    'MISSING_TOOL_COMBINED',
 }
 
 
@@ -1338,6 +1342,20 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
             if a_value is None and b_value is None:
                 continue
             value = (a_value, b_value)  # Store as tuple for special processing
+        elif field == 'WRONG_TOOL_COMBINED':
+            # Tools: combine percentage and count in percent(count) format
+            percentage = summary_row.get('WRONG_TOOL_PERCENTAGE')
+            count = summary_row.get('WRONG_TOOL_COUNT')
+            if percentage is None and count is None:
+                continue
+            value = (percentage, count)  # Store as tuple for special processing
+        elif field == 'MISSING_TOOL_COMBINED':
+            # Tools: combine percentage and count in percent(count) format
+            percentage = summary_row.get('MISSING_TOOL_PERCENTAGE')
+            count = summary_row.get('MISSING_TOOL_COUNT')
+            if percentage is None and count is None:
+                continue
+            value = (percentage, count)  # Store as tuple for special processing
         else:
             if field not in summary_row.index:
                 continue
@@ -1447,7 +1465,7 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
                 percent_str = str(percent)
             count_str = str(count) if count is not None else ''
             display_value = f"{count_str} ({percent_str})".strip()
-        elif field in {'MISSING_POLICY_COMBINED', 'UNCLEAR_POLICY_COMBINED', 'WRONG_POLICY_COMBINED', 'TRANSFER_ESCALATION_COMBINED', 'TRANSFER_KNOWN_FLOW_COMBINED'}:
+        elif field in {'MISSING_POLICY_COMBINED', 'UNCLEAR_POLICY_COMBINED', 'WRONG_POLICY_COMBINED', 'TRANSFER_ESCALATION_COMBINED', 'TRANSFER_KNOWN_FLOW_COMBINED', 'WRONG_TOOL_COMBINED', 'MISSING_TOOL_COMBINED'}:
             # Policy violation & transfer combined formatting
             def format_percentage(val):
                 if val is None or pd.isna(val):
@@ -1475,6 +1493,28 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
                 a_str = format_percentage(a_value)
                 b_str = format_percentage(b_value)
                 display_value = f"{a_str} ({b_str})"
+            elif field in {'WRONG_TOOL_COMBINED', 'MISSING_TOOL_COMBINED'}:
+                # Tools fields: count (percentage%) formatting
+                percentage, count = value  # Unpack the tuple
+                
+                # Format percentage
+                try:
+                    if percentage is None or pd.isna(percentage):
+                        percent_str = "N/A"
+                    elif isinstance(percentage, str) and '%' in percentage:
+                        percent_str = percentage
+                    else:
+                        pnum = float(percentage)
+                        # Do NOT scale decimals to percent; append % as-is
+                        pstr_raw = ("%f" % pnum).rstrip('0').rstrip('.')
+                        percent_str = f"{pstr_raw}%"
+                except Exception:
+                    percent_str = str(percentage) if percentage is not None else "N/A"
+                
+                # Format count
+                count_str = str(count) if count is not None and not pd.isna(count) else "N/A"
+                
+                display_value = f"{count_str} ({percent_str})"
             else:
                 # CC Sales and MV Resolvers policy fields: single value formatting
                 display_value = format_percentage(value)
@@ -2185,7 +2225,7 @@ def main():
                     'transfer_escalation': {'TRANSFER_ESCALATION_COMBINED'},
                     'transfer_known_flow': {'TRANSFER_KNOWN_FLOW_COMBINED'},
                     'loss_of_interest': set(),  # No snapshot fields for loss_of_interest
-                    'tools': set(),  # Tools snapshot columns will be added later
+                    'tools': {'WRONG_TOOL_COMBINED', 'MISSING_TOOL_COMBINED'},
                     'shadowing_automation': set(),  # No snapshot fields for shadowing automation
                 }
                 snapshot_allowed_fields = metric_to_fields.get(metric_key)
