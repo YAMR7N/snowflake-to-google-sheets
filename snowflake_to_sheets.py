@@ -1548,7 +1548,7 @@ def update_snapshot_sheet(gc: SheetsClient, snapshot_sheet_id: str, dept_name: s
 # Per-metric raw upload
 # =============================
 
-TARGET_LLM_COLUMNS = ['CONVERSATION_ID', 'MODEL_NAME', 'CONVERSATION_CONTENT', 'LLM_RESPONSE', 'TOKENS_BREAKDOWN']
+TARGET_LLM_COLUMNS = ['CONVERSATION_ID', 'MODEL_NAME', 'CONVERSATION_CONTENT', 'LLM_RESPONSE', 'TOKENS_BREAKDOWN', 'SYSTEM PROMPT PART']
 
 # Additional columns for specific departments
 DEPT_SPECIFIC_COLUMNS = {
@@ -1575,7 +1575,64 @@ COLUMN_CANDIDATES = {
     
     # Tokens breakdown column
     'TOKENS_BREAKDOWN': ['TOKENS_BREAKDOWN', 'tokens_breakdown', 'Tokens_Breakdown', 'TOKEN_BREAKDOWN', 'token_breakdown', 'TOKENS', 'tokens'],
+    'SYSTEM PROMPT PART': ['SYSTEM PROMPT PART', 'system prompt part', 'System Prompt Part', 'SYSTEM_PROMPT_SNAPSHOT', 'system_prompt_snapshot'],
 }
+
+
+def add_system_prompt_to_raw_data(df: pd.DataFrame, conn, date_str: str, department: str) -> pd.DataFrame:
+    """Join system prompt data from SYSTEM_PROMPT_TOKENS_RAW_DATA to raw LLM data on CONVERSATION_ID.
+    Adds SYSTEM_PROMPT_SNAPSHOT as 'SYSTEM PROMPT PART' column to the raw data.
+    """
+    if df.empty:
+        return df
+    
+    print(f"   🔗 Adding system prompt data for {department}")
+    
+    try:
+        # Fetch system prompt data for this date and department
+        system_prompt_df = fetch_table_df(conn, 'SYSTEM_PROMPT_TOKENS_RAW_DATA', date_str, department)
+        
+        if system_prompt_df.empty:
+            print(f"   ℹ️ No system prompt data found for {department} on {date_str}")
+            # Add empty SYSTEM PROMPT PART column
+            df['SYSTEM PROMPT PART'] = ''
+            return df
+        
+        # Check if required columns exist
+        if 'CONVERSATION_ID' not in df.columns:
+            print(f"   ⚠️ CONVERSATION_ID not found in raw data, cannot join system prompts")
+            df['SYSTEM PROMPT PART'] = ''
+            return df
+            
+        if 'CONVERSATION_ID' not in system_prompt_df.columns or 'SYSTEM_PROMPT_SNAPSHOT' not in system_prompt_df.columns:
+            print(f"   ⚠️ Required columns not found in system prompt data")
+            df['SYSTEM PROMPT PART'] = ''
+            return df
+        
+        # Prepare system prompt data for joining - select only needed columns
+        prompt_data = system_prompt_df[['CONVERSATION_ID', 'SYSTEM_PROMPT_SNAPSHOT']].drop_duplicates(subset=['CONVERSATION_ID'])
+        
+        # Rename the column to our target name
+        prompt_data = prompt_data.rename(columns={'SYSTEM_PROMPT_SNAPSHOT': 'SYSTEM PROMPT PART'})
+        
+        # Perform left join to preserve all raw data rows
+        result_df = df.merge(prompt_data, on='CONVERSATION_ID', how='left')
+        
+        # Fill missing system prompts with empty string
+        result_df['SYSTEM PROMPT PART'] = result_df['SYSTEM PROMPT PART'].fillna('')
+        
+        # Log join statistics
+        total_rows = len(df)
+        matched_rows = len(result_df[result_df['SYSTEM PROMPT PART'] != ''])
+        print(f"   ✅ System prompt join complete: {matched_rows}/{total_rows} rows matched")
+        
+        return result_df
+        
+    except Exception as e:
+        print(f"   ❌ Failed to add system prompt data: {e}")
+        # Add empty column on failure
+        df['SYSTEM PROMPT PART'] = ''
+        return df
 
 
 def filter_llm_columns(df: pd.DataFrame, department: str = None) -> pd.DataFrame:
@@ -1733,6 +1790,21 @@ def filter_summary_columns(metric_key: str, df: pd.DataFrame) -> pd.DataFrame:
             result[target] = ''
 
     return result
+
+
+def process_raw_data_with_system_prompt(df: pd.DataFrame, conn, date_str: str, department: str) -> pd.DataFrame:
+    """Process raw LLM data by adding system prompt information and filtering columns."""
+    if df.empty:
+        return df
+    
+    # Step 1: Add system prompt data
+    df_with_prompts = add_system_prompt_to_raw_data(df, conn, date_str, department)
+    
+    # Step 2: Filter to target columns
+    filtered_df = filter_llm_columns(df_with_prompts, department)
+    
+    return filtered_df
+
 
 def prettify_summary_headers(metric_key: str, dept: str, df: pd.DataFrame) -> pd.DataFrame:
     """Rename summary headers to readable labels for specific cases.
@@ -1935,14 +2007,14 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 gc.upload_dataframe(spreadsheet_id, report_tab, filtered)
             else:
                 if gc.create_sheet_if_missing(spreadsheet_id, report_tab):
-                    gc.upload_dataframe(spreadsheet_id, report_tab, filter_llm_columns(df, dept))
+                    gc.upload_dataframe(spreadsheet_id, report_tab, process_raw_data_with_system_prompt(df, conn, date_str, dept))
 
             # Always upload filtered raw to -RAW tab for traceability
             if gc.create_sheet_if_missing(spreadsheet_id, raw_tab):
-                gc.upload_dataframe(spreadsheet_id, raw_tab, filter_llm_columns(df, dept))
+                gc.upload_dataframe(spreadsheet_id, raw_tab, process_raw_data_with_system_prompt(df, conn, date_str, dept))
         elif metric.name == 'policy_escalation':
             # Upload raw to date tab
-            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df, dept))
+            gc.upload_dataframe(spreadsheet_id, sheet_name, process_raw_data_with_system_prompt(df, conn, date_str, dept))
             # Also upload summary to date-summary tab if available
             try:
                 pe_summary = fetch_table_df(conn, 'policy_escalation_summary', date_str, dept)
@@ -1955,7 +2027,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                     gc.upload_dataframe(spreadsheet_id, summary_tab, filter_summary_columns('policy_escalation', pe_summary))
         elif metric.name == 'loss_of_interest':
             # Upload raw first
-            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df, dept))
+            gc.upload_dataframe(spreadsheet_id, sheet_name, process_raw_data_with_system_prompt(df, conn, date_str, dept))
             # Then upload summary tab if available
             try:
                 loi_summary = fetch_table_df(conn, 'LOSS_INTEREST_SUMMARY', date_str, dept)
@@ -1976,7 +2048,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                         gc.merge_consecutive_cells(spreadsheet_id, summary_tab)
         elif metric.name == 'clinic_recommendation_reason':
             # Upload raw first
-            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df, dept))
+            gc.upload_dataframe(spreadsheet_id, sheet_name, process_raw_data_with_system_prompt(df, conn, date_str, dept))
             # Then upload summary tab if available
             try:
                 crr_summary = fetch_table_df(conn, 'CLINIC_RECOMMENDATION_REASON_SUMMARY', date_str, dept)
@@ -1993,7 +2065,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 # Fetch categorizing_raw_data filtered for the department
                 intervention_df = fetch_table_df(conn, 'CATEGORIZING_RAW_DATA', date_str, dept)
                 if not intervention_df.empty:
-                    gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(intervention_df, dept))
+                    gc.upload_dataframe(spreadsheet_id, sheet_name, process_raw_data_with_system_prompt(intervention_df, conn, date_str, dept))
                 else:
                     print(f"   ℹ️ No categorizing data found for {dept}")
             except Exception as e:
@@ -2037,7 +2109,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 
                 # Upload combined data
                 if not combined_df.empty:
-                    gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(combined_df, dept))
+                        gc.upload_dataframe(spreadsheet_id, sheet_name, process_raw_data_with_system_prompt(combined_df, conn, date_str, dept))
                 else:
                     print(f"   ℹ️ No policy violation data found for {dept}")
             else:
@@ -2045,7 +2117,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 try:
                     policy_df = fetch_table_df(conn, 'POLICY_VIOLATION_RAW_DATA', date_str, dept)
                     if not policy_df.empty:
-                        gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(policy_df, dept))
+                        gc.upload_dataframe(spreadsheet_id, sheet_name, process_raw_data_with_system_prompt(policy_df, conn, date_str, dept))
                     else:
                         print(f"   ℹ️ No policy violation data found for {dept}")
                 except Exception as e:
@@ -2065,7 +2137,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 try:
                     missing_raw_df = fetch_table_df(conn, 'MISSING_TOOL_RAW_DATA', date_str, dept)
                     if not missing_raw_df.empty and gc.create_sheet_if_missing(spreadsheet_id, missing_raw_tab):
-                        gc.upload_dataframe(spreadsheet_id, missing_raw_tab, filter_llm_columns(missing_raw_df, dept))
+                        gc.upload_dataframe(spreadsheet_id, missing_raw_tab, process_raw_data_with_system_prompt(missing_raw_df, conn, date_str, dept))
                     else:
                         print(f"   ℹ️ No missing tool raw data found for {dept}")
                 except Exception as e:
@@ -2084,7 +2156,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 try:
                     wrong_raw_df = fetch_table_df(conn, 'WRONG_TOOL_RAW_DATA', date_str, dept)
                     if not wrong_raw_df.empty and gc.create_sheet_if_missing(spreadsheet_id, wrong_raw_tab):
-                        gc.upload_dataframe(spreadsheet_id, wrong_raw_tab, filter_llm_columns(wrong_raw_df, dept))
+                        gc.upload_dataframe(spreadsheet_id, wrong_raw_tab, process_raw_data_with_system_prompt(wrong_raw_df, conn, date_str, dept))
                     else:
                         print(f"   ℹ️ No wrong tool raw data found for {dept}")
                 except Exception as e:
@@ -2108,7 +2180,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                 try:
                     tool_raw_df = fetch_table_df(conn, 'TOOL_RAW_DATA', date_str, dept)
                     if not tool_raw_df.empty and gc.create_sheet_if_missing(spreadsheet_id, raw_tab):
-                        gc.upload_dataframe(spreadsheet_id, raw_tab, filter_llm_columns(tool_raw_df, dept))
+                        gc.upload_dataframe(spreadsheet_id, raw_tab, process_raw_data_with_system_prompt(tool_raw_df, conn, date_str, dept))
                     else:
                         print(f"   ℹ️ No tool raw data found for {dept}")
                 except Exception as e:
@@ -2159,7 +2231,7 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
             except Exception as e:
                 print(f"   ❌ Failed fetching UNIQUE_ISSUES_SUMMARY: {e}")
         else:
-            gc.upload_dataframe(spreadsheet_id, sheet_name, filter_llm_columns(df, dept))
+            gc.upload_dataframe(spreadsheet_id, sheet_name, process_raw_data_with_system_prompt(df, conn, date_str, dept))
 
 
 # =============================
