@@ -2112,6 +2112,21 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
                         gc.upload_dataframe(spreadsheet_id, sheet_name, process_raw_data_with_system_prompt(combined_df, conn, date_str, dept))
                 else:
                     print(f"   ℹ️ No policy violation data found for {dept}")
+                
+                # Also upload UNCLEAR_POLICY_SUMMARY to date-summary tab for MV Resolvers
+                try:
+                    unclear_summary_df = fetch_table_df(conn, 'UNCLEAR_POLICY_SUMMARY', date_str, dept)
+                    if not unclear_summary_df.empty:
+                        summary_tab = f"{sheet_name}-summary"
+                        if gc.create_sheet_if_missing(spreadsheet_id, summary_tab):
+                            gc.upload_dataframe(spreadsheet_id, summary_tab, unclear_summary_df)
+                            print(f"   📋 Uploaded UNCLEAR_POLICY_SUMMARY to '{summary_tab}' tab")
+                        else:
+                            print(f"   ⚠️ Failed to create summary tab: {summary_tab}")
+                    else:
+                        print(f"   ℹ️ No unclear policy summary data found for {dept}")
+                except Exception as e:
+                    print(f"   ❌ Failed fetching UNCLEAR_POLICY_SUMMARY: {e}")
             else:
                 # All other departments (Filipina, CC Sales, etc.) use POLICY_VIOLATION_RAW_DATA
                 try:
