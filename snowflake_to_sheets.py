@@ -692,6 +692,7 @@ class SheetsClient:
             headers = values[0] if values else []
             target_columns = {
                 'RECRUITMENT_STAGE': None,
+                'CONVERSION_WINDOW': None,
                 'MAIN_REASON': None, 
                 'SUB_REASON': None,
                 'MAIN_REASON_COUNT': None,
@@ -791,6 +792,13 @@ class SheetsClient:
                 for start_row, end_row in recruitment_ranges:
                     merge_requests.append(create_merge_request(start_row, end_row, recruitment_idx))
                 print(f"   🎯 RECRUITMENT_STAGE: {len(recruitment_ranges)} merge ranges found")
+                
+                # Also process CONVERSION_WINDOW using the same ranges as RECRUITMENT_STAGE
+                conversion_idx = target_columns.get('CONVERSION_WINDOW')
+                if conversion_idx is not None:
+                    for start_row, end_row in recruitment_ranges:
+                        merge_requests.append(create_merge_request(start_row, end_row, conversion_idx))
+                    print(f"   🎯 CONVERSION_WINDOW: {len(recruitment_ranges)} merge ranges found (following RECRUITMENT_STAGE pattern)")
             
             # Step 2: Process MAIN_REASON and apply same merges to MAIN_REASON_COUNT
             main_reason_idx = target_columns.get('MAIN_REASON')
@@ -1922,15 +1930,15 @@ def format_loss_of_interest_summary(df: pd.DataFrame) -> pd.DataFrame:
         outside_uae_df = outside_uae_df.sort_values('_sort_order').drop('_sort_order', axis=1)
         philippines_df = philippines_df.sort_values('_sort_order').drop('_sort_order', axis=1)
         
-        # Create flow header rows
+        # Create flow header rows that will be merged across all columns
         if not outside_uae_df.empty:
-            header_row_outside = pd.DataFrame([{col: '' for col in outside_uae_df.columns}])
-            header_row_outside.iloc[0, 0] = 'Outside UAE Flow'  # Put flow name in first column
+            # Create header row with flow name in all columns so they get merged together
+            header_row_outside = pd.DataFrame([{col: 'Outside UAE Flow' for col in outside_uae_df.columns}])
             outside_uae_df = pd.concat([header_row_outside, outside_uae_df], ignore_index=True)
         
         if not philippines_df.empty:
-            header_row_philippines = pd.DataFrame([{col: '' for col in philippines_df.columns}])
-            header_row_philippines.iloc[0, 0] = 'Philippines Flow'  # Put flow name in first column
+            # Create header row with flow name in all columns so they get merged together
+            header_row_philippines = pd.DataFrame([{col: 'Philippines Flow' for col in philippines_df.columns}])
             philippines_df = pd.concat([header_row_philippines, philippines_df], ignore_index=True)
         
         # Combine flows with Outside UAE first, then Philippines
