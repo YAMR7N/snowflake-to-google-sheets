@@ -1930,36 +1930,40 @@ def format_loss_of_interest_summary(df: pd.DataFrame) -> pd.DataFrame:
         outside_uae_df = outside_uae_df.sort_values('_sort_order').drop('_sort_order', axis=1)
         philippines_df = philippines_df.sort_values('_sort_order').drop('_sort_order', axis=1)
         
-        # Create properly structured flows with separate header rows
-        final_sections = []
-        
-        if not outside_uae_df.empty:
-            # Create flow title row (merged across all columns)
-            flow_header = pd.DataFrame([{col: 'Outside UAE Flow' for col in outside_uae_df.columns}])
+        # Create clean structure: Header -> Outside UAE data -> Separator -> Header -> Philippines data
+        if not outside_uae_df.empty or not philippines_df.empty:
+            final_rows = []
             
-            # Create column headers row  
-            column_headers = pd.DataFrame([outside_uae_df.columns.tolist()], columns=outside_uae_df.columns)
+            # Start with Outside UAE Flow if it has data
+            if not outside_uae_df.empty:
+                # Add flow separator row
+                separator_row = ['Outside UAE Flow'] + [''] * (len(outside_uae_df.columns) - 1)
+                final_rows.append(separator_row)
+                
+                # Add data rows  
+                for _, row in outside_uae_df.iterrows():
+                    final_rows.append(row.tolist())
             
-            # Combine: Flow header + Column headers + Data
-            section = pd.concat([flow_header, column_headers, outside_uae_df], ignore_index=True)
-            final_sections.append(section)
-        
-        if not philippines_df.empty:
-            # Create flow title row (merged across all columns)  
-            flow_header = pd.DataFrame([{col: 'Philippines Flow' for col in philippines_df.columns}])
+            # Add Philippines Flow if it has data
+            if not philippines_df.empty:
+                # Add empty separator row if we had Outside UAE data
+                if final_rows:
+                    empty_row = [''] * len(philippines_df.columns)
+                    final_rows.append(empty_row)
+                
+                # Add flow separator row
+                separator_row = ['Philippines Flow'] + [''] * (len(philippines_df.columns) - 1)
+                final_rows.append(separator_row)
+                
+                # Add data rows
+                for _, row in philippines_df.iterrows():
+                    final_rows.append(row.tolist())
             
-            # Create column headers row
-            column_headers = pd.DataFrame([philippines_df.columns.tolist()], columns=philippines_df.columns)
-            
-            # Combine: Flow header + Column headers + Data
-            section = pd.concat([flow_header, column_headers, philippines_df], ignore_index=True)
-            final_sections.append(section)
-        
-        # Combine all sections
-        if final_sections:
-            formatted_df = pd.concat(final_sections, ignore_index=True)
+            # Convert back to DataFrame with original column structure
+            if final_rows:
+                formatted_df = pd.DataFrame(final_rows, columns=formatted_df.columns)
         else:
-            # Fallback if no flows have data
+            # No flow data, use original
             formatted_df = df
     
     return formatted_df
