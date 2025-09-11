@@ -1715,7 +1715,7 @@ SUMMARY_COLUMN_TARGETS = {
         'CLINIC_RECOMMENDATION_COUNT', 'CLINIC_RECOMMENDATION_PCT',
         'OTC_MEDICATION_COUNT', 'OTC_MEDICATION_PCT'
     ],
-    'loss_of_interest': ['RECRUITMENT_STAGE', 'MAIN_REASON', 'MAIN_REASON_COUNT', 'SUB_REASON', 'SUB_REASON_COUNT'],
+    'loss_of_interest': ['RECRUITMENT_STAGE', 'CONVERSION_WINDOW', 'MAIN_REASON', 'MAIN_REASON_COUNT', 'SUB_REASON', 'SUB_REASON_COUNT'],
     'clinic_recommendation_reason': ['CATEGORY_NAME', 'NUMBER_OF_CHATS'],
     'shadowing_automation': ['UNIQUE_ISSUES', 'CATEGORY', 'SEVERITY', 'FREQUENCY', 'STATUS', 'ISSUE_IDS'],
 }
@@ -1745,6 +1745,7 @@ SUMMARY_COLUMN_CANDIDATES = {
     'MAIN_REASON_PCT': ['MAIN_REASON_PCT', 'Main_Reason_Pct', 'Main Reason %', 'main_reason_pct'],
     'SUB_REASON_COUNT': ['SUB_REASON_COUNT', 'Sub_Reason_Count', 'sub_reason_count'],
     'SUB_REASON_PCT': ['SUB_REASON_PCT', 'Sub_Reason_Pct', 'Sub Reason %', 'sub_reason_pct'],
+    'CONVERSION_WINDOW': ['CONVERSION_WINDOW', 'Conversion_Window', 'conversion_window', 'CONVERSION WINDOW', 'Conversion Window'],
 
     'CATEGORY_NAME': ['CATEGORY_NAME', 'Category_Name', 'category_name', 'Category Name'],
     'NUMBER_OF_CHATS': ['NUMBER_OF_CHATS', 'Number_Of_Chats', 'number_of_chats', 'Number of Chats', 'Chat Count', 'CHAT_COUNT'],
@@ -1829,12 +1830,56 @@ def prettify_summary_headers(metric_key: str, dept: str, df: pd.DataFrame) -> pd
 
 def format_loss_of_interest_summary(df: pd.DataFrame) -> pd.DataFrame:
     """Format loss of interest summary data with count(percentage%) format.
+    Restructures data into Outside UAE Flow and Philippines Flow with proper ordering.
     Uses percentage data as-is from Snowflake without additional formatting.
     """
     if df.empty:
         return df
     
+    # Mapping from raw data names to display names
+    STAGE_NAME_MAPPING = {
+        'Joining Date Outside UAE': 'Pending Maid to Provide Joining Date',
+        'Photo Submission Outside UAE': 'Pending Maid to Share Face Photo',
+        'Passport Submission Outside UAE': 'Pending Maid to Share Passport',
+        'OEC Philippines': 'Pending Maid to Share an Active OEC',
+        'Passport Submission (Photo) Philippines': 'Pending Maid to Share a Copy of Her Passport',
+        'Photo Submission (Photo) Philippines': 'Pending Maid to Share Face Photo',
+        # Note: 'Pending Maid to Share her Active Visa' not in current raw data - will be skipped if missing
+    }
+    
+    # Conversion window values for each display stage
+    CONVERSION_WINDOWS = {
+        'Pending Maid to Provide Joining Date': '8',
+        'Pending Maid to Share Face Photo': '5', 
+        'Pending Maid to Share Passport': '5',
+        'Pending Maid to Share her Active Visa': '3',
+        'Pending Maid to Share a Copy of Her Passport': '5',
+        'Pending Maid to Share an Active OEC': '8'
+    }
+    
+    # Define flows and their order
+    OUTSIDE_UAE_FLOW = [
+        'Pending Maid to Provide Joining Date',
+        'Pending Maid to Share Face Photo',
+        'Pending Maid to Share Passport'
+    ]
+    
+    PHILIPPINES_FLOW = [
+        'Pending Maid to Share her Active Visa',
+        'Pending Maid to Share a Copy of Her Passport', 
+        'Pending Maid to Share Face Photo',
+        'Pending Maid to Share an Active OEC'
+    ]
+    
     formatted_df = df.copy()
+    
+    # Apply stage name mapping if RECRUITMENT_STAGE column exists
+    if 'RECRUITMENT_STAGE' in formatted_df.columns:
+        formatted_df['RECRUITMENT_STAGE'] = formatted_df['RECRUITMENT_STAGE'].map(STAGE_NAME_MAPPING).fillna(formatted_df['RECRUITMENT_STAGE'])
+    
+    # Add Conversion Window column
+    if 'RECRUITMENT_STAGE' in formatted_df.columns:
+        formatted_df['CONVERSION_WINDOW'] = formatted_df['RECRUITMENT_STAGE'].map(CONVERSION_WINDOWS).fillna('')
     
     # Format MAIN_REASON_COUNT to show count(percentage%) 
     # Use percentage data directly from Snowflake without additional formatting
@@ -1859,6 +1904,42 @@ def format_loss_of_interest_summary(df: pd.DataFrame) -> pd.DataFrame:
                 # Use percentage as-is from Snowflake (already formatted)
                 pct_str = str(pct) if pct is not None else ''
                 formatted_df.at[idx, 'SUB_REASON_COUNT'] = f"{count} ({pct_str})"
+    
+    # Sort and restructure data into flows
+    if 'RECRUITMENT_STAGE' in formatted_df.columns:
+        # Separate data into flows
+        outside_uae_df = formatted_df[formatted_df['RECRUITMENT_STAGE'].isin(OUTSIDE_UAE_FLOW)].copy()
+        philippines_df = formatted_df[formatted_df['RECRUITMENT_STAGE'].isin(PHILIPPINES_FLOW)].copy()
+        
+        # Sort each flow according to defined order
+        outside_uae_df['_sort_order'] = outside_uae_df['RECRUITMENT_STAGE'].map(
+            {stage: i for i, stage in enumerate(OUTSIDE_UAE_FLOW)}
+        )
+        philippines_df['_sort_order'] = philippines_df['RECRUITMENT_STAGE'].map(
+            {stage: i for i, stage in enumerate(PHILIPPINES_FLOW)}
+        )
+        
+        outside_uae_df = outside_uae_df.sort_values('_sort_order').drop('_sort_order', axis=1)
+        philippines_df = philippines_df.sort_values('_sort_order').drop('_sort_order', axis=1)
+        
+        # Create flow header rows
+        if not outside_uae_df.empty:
+            header_row_outside = pd.DataFrame([{col: '' for col in outside_uae_df.columns}])
+            header_row_outside.iloc[0, 0] = 'Outside UAE Flow'  # Put flow name in first column
+            outside_uae_df = pd.concat([header_row_outside, outside_uae_df], ignore_index=True)
+        
+        if not philippines_df.empty:
+            header_row_philippines = pd.DataFrame([{col: '' for col in philippines_df.columns}])
+            header_row_philippines.iloc[0, 0] = 'Philippines Flow'  # Put flow name in first column
+            philippines_df = pd.concat([header_row_philippines, philippines_df], ignore_index=True)
+        
+        # Combine flows with Outside UAE first, then Philippines
+        if not outside_uae_df.empty and not philippines_df.empty:
+            formatted_df = pd.concat([outside_uae_df, philippines_df], ignore_index=True)
+        elif not outside_uae_df.empty:
+            formatted_df = outside_uae_df
+        elif not philippines_df.empty:
+            formatted_df = philippines_df
     
     return formatted_df
 
@@ -2419,4 +2500,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
