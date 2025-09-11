@@ -1930,41 +1930,44 @@ def format_loss_of_interest_summary(df: pd.DataFrame) -> pd.DataFrame:
         outside_uae_df = outside_uae_df.sort_values('_sort_order').drop('_sort_order', axis=1)
         philippines_df = philippines_df.sort_values('_sort_order').drop('_sort_order', axis=1)
         
-        # Create clean structure: Header -> Outside UAE data -> Separator -> Header -> Philippines data
-        if not outside_uae_df.empty or not philippines_df.empty:
-            final_rows = []
+        # Create final structure with flow separators
+        result_rows = []
+        
+        if not outside_uae_df.empty:
+            # Add Outside UAE Flow separator
+            flow_separator = pd.Series(['Outside UAE Flow'] + [''] * (len(outside_uae_df.columns) - 1), 
+                                     index=outside_uae_df.columns)
+            result_rows.append(flow_separator)
             
-            # Start with Outside UAE Flow if it has data
-            if not outside_uae_df.empty:
-                # Add flow separator row
-                separator_row = ['Outside UAE Flow'] + [''] * (len(outside_uae_df.columns) - 1)
-                final_rows.append(separator_row)
-                
-                # Add data rows  
-                for _, row in outside_uae_df.iterrows():
-                    final_rows.append(row.tolist())
+            # Add Outside UAE data
+            for _, row in outside_uae_df.iterrows():
+                result_rows.append(row)
+        
+        if not philippines_df.empty:
+            # Add empty row separator if we had outside UAE data
+            if result_rows:
+                empty_separator = pd.Series([''] * len(philippines_df.columns), 
+                                          index=philippines_df.columns)
+                result_rows.append(empty_separator)
             
-            # Add Philippines Flow if it has data
-            if not philippines_df.empty:
-                # Add empty separator row if we had Outside UAE data
-                if final_rows:
-                    empty_row = [''] * len(philippines_df.columns)
-                    final_rows.append(empty_row)
-                
-                # Add flow separator row
-                separator_row = ['Philippines Flow'] + [''] * (len(philippines_df.columns) - 1)
-                final_rows.append(separator_row)
-                
-                # Add data rows
-                for _, row in philippines_df.iterrows():
-                    final_rows.append(row.tolist())
+            # Add Philippines Flow separator
+            flow_separator = pd.Series(['Philippines Flow'] + [''] * (len(philippines_df.columns) - 1), 
+                                     index=philippines_df.columns)
+            result_rows.append(flow_separator)
             
-            # Convert back to DataFrame with original column structure
-            if final_rows:
-                formatted_df = pd.DataFrame(final_rows, columns=formatted_df.columns)
+            # Add Philippines data
+            for _, row in philippines_df.iterrows():
+                result_rows.append(row)
+        
+        # Convert to DataFrame
+        if result_rows:
+            formatted_df = pd.DataFrame(result_rows)
+            formatted_df = formatted_df.reset_index(drop=True)
         else:
-            # No flow data, use original
+            # Fallback to original data if no flows
             formatted_df = df
+            
+        print(f"   📋 Created {len(result_rows)} total rows with flow separators")
     
     return formatted_df
 
