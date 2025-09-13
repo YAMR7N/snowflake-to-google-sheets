@@ -207,6 +207,42 @@ def fetch_table_df(conn, table_name: str, date_str: str, department: str) -> pd.
         cur.close()
 
 
+def fetch_table_df_no_date_filter(conn, table_name: str, department: str) -> pd.DataFrame:
+    """Fetch all rows from a Snowflake table for a department without date filtering.
+    Used for summary tables that should include all historical data.
+    """
+    print(f"   📥 Fetching: {table_name} for {department} (all dates)")
+    # Map department to Snowflake DEPARTMENT representation (uppercase compare)
+    mapped, mode = map_dept_for_snowflake(department)
+    dept_key = mapped.upper().strip()
+    if mode == 'prefix':
+        query = f"""
+            SELECT *
+            FROM {table_name}
+            WHERE UPPER(TRIM(DEPARTMENT)) LIKE %s
+            ORDER BY DATE DESC
+        """
+        dept_param = dept_key + '%'
+    else:
+        query = f"""
+            SELECT *
+            FROM {table_name}
+            WHERE UPPER(TRIM(DEPARTMENT)) = %s
+            ORDER BY DATE DESC
+        """
+        dept_param = dept_key
+    cur = conn.cursor()
+    try:
+        cur.execute(query, (dept_param,))
+        rows = cur.fetchall()
+        cols = [c[0] for c in cur.description]
+        df = pd.DataFrame(rows, columns=cols)
+        print(f"   ✅ Retrieved {len(df)} row(s) (all dates)")
+        return df
+    finally:
+        cur.close()
+
+
 def fetch_summary_row(conn, dept_name: str, date_str: str) -> Optional[pd.Series]:
     """Fetch a single summary row for department and date from per-dept summary table.
     Table name pattern: {dept_clean_name}_summary
@@ -2336,7 +2372,8 @@ def upload_metric_raw(gc: SheetsClient, metric: Metric, policy_sheet_ids: Dict[s
             
             # Upload summary to date-summary tab and also to "unique issues" tab
             try:
-                summary_df = fetch_table_df(conn, 'UNIQUE_ISSUES_SUMMARY', date_str, dept)
+                # Fetch summary without date filtering (include all historical data)
+                summary_df = fetch_table_df_no_date_filter(conn, 'UNIQUE_ISSUES_SUMMARY', dept)
                 if not summary_df.empty:
                     filtered_summary = filter_summary_columns('shadowing_automation', summary_df)
                     
